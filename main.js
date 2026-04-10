@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
+const { execSync } = require('child_process');
 require('dotenv').config();
 
 const Introspector = require('./src/core/Introspector');
@@ -11,7 +12,18 @@ const crudTemplates = require('./src/templates/crudTemplates');
 const infraTemplates = require('./src/templates/infraTemplates');
 const validatorTemplates = require('./src/templates/validatorTemplates');
 
+function parseBoolean(value, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  return fallback;
+}
+
 async function main() {
+  const shouldAutoInstallAndFormat = parseBoolean(process.env.AUTO_INSTALL_AND_FORMAT, true);
+
   const dbConfig = {
     host: process.env.DB_HOST || 'localhost',
     user: process.env.DB_USER || 'root',
@@ -170,10 +182,37 @@ async function main() {
     .addGenerator(new StaticFileGenerator(targetDir, 'src/app.js', infraTemplates.app))
     .addGenerator(new StaticFileGenerator(targetDir, 'src/server.js', infraTemplates.server))
     .addGenerator(new StaticFileGenerator(targetDir, 'package.json', infraTemplates.packageJson))
+    .addGenerator(
+      new StaticFileGenerator(targetDir, 'prettier.config.js', infraTemplates.prettierConfigFile),
+    )
+    .addGenerator(
+      new StaticFileGenerator(targetDir, '.prettierignore', infraTemplates.prettierIgnoreFile),
+    )
     .addGenerator(new StaticFileGenerator(targetDir, '.env', infraTemplates.envfile))
     .addGenerator(new StaticFileGenerator(targetDir, '.gitignore', infraTemplates.gitignoreFile));
 
   await engine.run();
+
+  if (shouldAutoInstallAndFormat) {
+    console.log('Installing dependencies for generated API...');
+    execSync('npm install', {
+      cwd: targetDir,
+      stdio: 'inherit',
+      shell: true,
+    });
+
+    console.log('Formatting generated API with local Prettier...');
+    execSync('npm run format', {
+      cwd: targetDir,
+      stdio: 'inherit',
+      shell: true,
+    });
+    return;
+  }
+
+  console.log(
+    'AUTO_INSTALL_AND_FORMAT=false: skipping npm install and npm run format in generated API.',
+  );
 }
 
 main().catch(console.error);

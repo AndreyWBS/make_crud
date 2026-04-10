@@ -350,6 +350,8 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
         scripts: {
           start: 'node src/server.js',
           dev: 'nodemon src/server.js',
+          format: 'prettier --write .',
+          'format:check': 'prettier --check .',
         },
         dependencies: {
           express: '^4.18.2',
@@ -364,6 +366,7 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
         },
         devDependencies: {
           nodemon: '^3.1.4',
+          prettier: '^3.6.2',
         },
       },
       null,
@@ -712,6 +715,23 @@ module.exports = (req, res, next) => {
     };
   };
   `,
+
+  prettierConfigFile: () => `/** @type {import('prettier').Config} */
+module.exports = {
+  semi: true,
+  singleQuote: true,
+  trailingComma: 'all',
+  printWidth: 100,
+  tabWidth: 2,
+  bracketSpacing: true,
+  arrowParens: 'always',
+  endOfLine: 'lf',
+};
+`,
+
+  prettierIgnoreFile: () => `node_modules
+package-lock.json
+`,
 
   gitignoreFile: () => `node_modules/
 .env
