@@ -96,9 +96,60 @@ function httpStatusText(code) {
 `,
 
   logger: () => `
+  function log(level, msg, meta = {}) {
+    const payload = {
+      timestamp: new Date().toISOString(),
+      level,
+      message: msg,
+      ...meta
+    };
+    const line = JSON.stringify(payload);
+    if (level === 'error') {
+      console.error(line);
+      return;
+    }
+    console.log(line);
+  }
+
 module.exports = {
-    info: (msg) => console.log(\`[INFO] \${new Date().toISOString()}: \${msg}\`),
-    error: (msg) => console.error(\`[ERROR] \${new Date().toISOString()}: \${msg}\`)
+    info: (msg, meta) => log('info', msg, meta),
+    error: (msg, meta) => log('error', msg, meta)
+};
+`,
+
+  pagination: () => `
+const AppError = require('./AppError');
+
+const MAX_LIMIT = Number(process.env.API_MAX_LIMIT) || 100;
+
+function normalizePagination(page, limit) {
+  const parsedPage = Number.parseInt(page, 10);
+  const parsedLimit = Number.parseInt(limit, 10);
+
+  if (!Number.isInteger(parsedPage) || parsedPage < 1) {
+    throw new AppError(400, 'Invalid page. It must be an integer >= 1.');
+  }
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > MAX_LIMIT) {
+    throw new AppError(400, 'Invalid limit. It must be an integer between 1 and ' + MAX_LIMIT + '.');
+  }
+
+  return { page: parsedPage, limit: parsedLimit };
+}
+
+function parseIncludeTotal(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    if (value.toLowerCase() === 'true') return true;
+    if (value.toLowerCase() === 'false') return false;
+  }
+  throw new AppError(400, 'Invalid includeTotal. Use true or false.');
+}
+
+module.exports = {
+  MAX_LIMIT,
+  normalizePagination,
+  parseIncludeTotal
 };
 `,
 
@@ -139,8 +190,11 @@ const pool = mysql.createPool({
     database: env.DB_NAME,
     port: env.DB_PORT,
     waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0
+  connectionLimit: Number(process.env.DB_CONNECTION_LIMIT) || 10,
+  queueLimit: Number(process.env.DB_QUEUE_LIMIT) || 0,
+  connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 10000,
+  enableKeepAlive: true,
+  keepAliveInitialDelay: 0
 });
 
 module.exports = pool;
@@ -156,7 +210,9 @@ module.exports = {
     DB_PASSWORD: process.env.DB_PASSWORD,
     DB_NAME: process.env.DB_NAME,
     DB_PORT: Number(process.env.DB_PORT) || 3306,
-    JWT_SECRET: process.env.JWT_SECRET || 'secret'
+  JWT_SECRET: process.env.JWT_SECRET || 'secret',
+  DB_QUERY_TIMEOUT_MS: Number(process.env.DB_QUERY_TIMEOUT_MS) || 10000,
+  API_MAX_LIMIT: Number(process.env.API_MAX_LIMIT) || 100
 };
 `,
 
@@ -189,5 +245,10 @@ DB_PASSWORD=
 DB_NAME=my_database
 DB_PORT=3306
 JWT_SECRET=your_jwt_secret
+DB_CONNECTION_LIMIT=10
+DB_QUEUE_LIMIT=0
+DB_CONNECT_TIMEOUT_MS=10000
+DB_QUERY_TIMEOUT_MS=10000
+API_MAX_LIMIT=100
 `,
 };

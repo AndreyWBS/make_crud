@@ -36,11 +36,17 @@ module.exports = {
 
     return `
 class ${className}Validator {
+    validatePayload(data) {
+      const errors = [];
+
+      ${validationLogic}
+
+      return errors;
+    }
+
     validate(req, res, next) {
         const data = req.body;
-        const errors = [];
-
-        ${validationLogic}
+      const errors = this.validatePayload(data);
 
         if (errors.length > 0) {
             return res.status(400).json({ errors });
@@ -57,8 +63,7 @@ class ${className}Validator {
 
         const allErrors = [];
         dataArray.forEach((data, index) => {
-            const errors = [];
-            ${validationLogic}
+          const errors = this.validatePayload(data);
             if (errors.length > 0) {
                 allErrors.push({ index, errors });
             }

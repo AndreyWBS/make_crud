@@ -120,6 +120,13 @@ async function main() {
       ),
     )
     .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/utils/pagination.js",
+        infraTemplates.pagination,
+      ),
+    )
+    .addGenerator(
       new StaticFileGenerator(targetDir, "src/app.js", infraTemplates.app),
     )
     .addGenerator(
