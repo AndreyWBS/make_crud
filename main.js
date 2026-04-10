@@ -87,6 +87,27 @@ async function main() {
     .addGenerator(
       new StaticFileGenerator(
         targetDir,
+        "src/middlewares/authorizeMiddleware.js",
+        infraTemplates.authorizeMiddleware,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/middlewares/requestContextMiddleware.js",
+        infraTemplates.requestContextMiddleware,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/middlewares/requestLoggerMiddleware.js",
+        infraTemplates.requestLoggerMiddleware,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
         "src/middlewares/errorMiddleware.js",
         infraTemplates.errorMiddleware,
       ),
@@ -144,7 +165,14 @@ async function main() {
       ),
     )
     .addGenerator(
-      new StaticFileGenerator(targetDir, "env", infraTemplates.envfile),
+      new StaticFileGenerator(targetDir, ".env", infraTemplates.envfile),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        ".gitignore",
+        infraTemplates.gitignoreFile,
+      ),
     );
 
   await engine.run();

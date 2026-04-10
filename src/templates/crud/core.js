@@ -462,16 +462,31 @@ const express = require('express');
 const router = express.Router();
 const ${controllerName} = require('../controllers/${controllerName}');
 const authMiddleware = require('../middlewares/authMiddleware');
+const authorize = require('../middlewares/authorizeMiddleware');
 const ${validatorName} = require('../middlewares/validators/${validatorName}');
 
-router.get('/', authMiddleware, ${controllerName}.getAll);
-router.get('/search/:column/:value', authMiddleware, ${controllerName}.findByColumn);
-router.get('/:id', authMiddleware, ${controllerName}.getById);
+const RESOURCE = '${tableName}';
+const canRead = authorize({
+    anyRole: ['admin', 'operator', 'read_only'],
+    anyScope: [RESOURCE + ':read'],
+});
+const canWrite = authorize({
+    anyRole: ['admin', 'operator'],
+    anyScope: [RESOURCE + ':write'],
+});
+const canDelete = authorize({
+    anyRole: ['admin'],
+    anyScope: [RESOURCE + ':delete'],
+});
 
-router.post('/', authMiddleware, ${validatorName}.validate, ${controllerName}.create);
-router.post('/bulk', authMiddleware, ${validatorName}.validateBulk, ${controllerName}.createBulk);
-router.put('/:id', authMiddleware, ${validatorName}.validate, ${controllerName}.update);
-router.delete('/:id', authMiddleware, ${controllerName}.delete);
+router.get('/', authMiddleware, canRead, ${controllerName}.getAll);
+router.get('/search/:column/:value', authMiddleware, canRead, ${controllerName}.findByColumn);
+router.get('/:id', authMiddleware, canRead, ${controllerName}.getById);
+
+router.post('/', authMiddleware, canWrite, ${validatorName}.validate, ${controllerName}.create);
+router.post('/bulk', authMiddleware, canWrite, ${validatorName}.validateBulk, ${controllerName}.createBulk);
+router.put('/:id', authMiddleware, canWrite, ${validatorName}.validate, ${controllerName}.update);
+router.delete('/:id', authMiddleware, canDelete, ${controllerName}.delete);
 
 module.exports = router;
 `;
