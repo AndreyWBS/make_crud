@@ -108,6 +108,13 @@ async function main() {
     .addGenerator(
       new StaticFileGenerator(
         targetDir,
+        "src/utils/AppError.js",
+        infraTemplates.appError,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
         "src/utils/logger.js",
         infraTemplates.logger,
       ),

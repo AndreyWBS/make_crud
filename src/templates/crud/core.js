@@ -69,6 +69,20 @@ class ${className}Repository {
         return rows[0];
     }
 
+    async findByColumnPaginated(columnName, value, isStringColumn = false, page = 1, limit = 10) {
+        const operator = isStringColumn ? 'LIKE' : '=';
+        const searchValue = isStringColumn ? \`%\${value}%\` : value;
+        
+        const query = \`SELECT * FROM ${tableName} WHERE \${columnName} \${operator} ? LIMIT ? OFFSET ?\`;
+        const countQuery = \`SELECT COUNT(*) as total FROM ${tableName} WHERE \${columnName} \${operator} ?\`;
+        
+        const offset = (page - 1) * limit;
+        const [rows] = await pool.query(query, [searchValue, parseInt(limit), parseInt(offset)]);
+        const [[{ total }]] = await pool.query(countQuery, [searchValue]);
+
+        return { data: rows, total };
+    }
+
 ${findByMethods}
 
     async create(data) {
@@ -111,7 +125,7 @@ module.exports = new ${className}Repository();
         const methodName = `findBy${pascalCase(col.name)}`;
         return `    async ${methodName}(value) {
         const item = await ${repoName}.${methodName}(value);
-        if (!item) throw new Error('${className} with ${col.name} ' + value + ' not found');
+        if (!item) throw new AppError(404, '${className} with ${col.name} ' + value + ' not found');
         return item;
     }`;
       })
@@ -119,6 +133,7 @@ module.exports = new ${className}Repository();
 
     return `
 const ${repoName} = require('../repositories/${repoName}');
+const AppError = require('../utils/AppError');
 
 class ${className}Service {
     async getAll(filters, page, limit) {
@@ -138,7 +153,7 @@ class ${className}Service {
 
     async getById(id) {
         const item = await ${repoName}.findById(id);
-        if (!item) throw new Error('${className} not found');
+        if (!item) throw new AppError(404, '${className} not found');
         return item;
     }
 
@@ -160,6 +175,24 @@ ${findByMethods}
     async delete(id) {
         await this.getById(id);
         return await ${repoName}.delete(id);
+    }
+
+    async findByColumnPaginated(columnName, value, page = 1, limit = 10) {
+        const columnDef = ${JSON.stringify(schema.columns)}.find(c => c.name === columnName);
+        const isStringColumn = columnDef && /^(varchar|char|text|longtext|mediumtext|tinytext|string)/.test(String(columnDef.type).toLowerCase());
+        
+        const { data, total } = await ${repoName}.findByColumnPaginated(columnName, value, isStringColumn, page, limit);
+        const totalPages = Math.ceil(total / limit);
+
+        return {
+            data,
+            meta: {
+                totalItems: total,
+                totalPages,
+                currentPage: parseInt(page),
+                itemsPerPage: parseInt(limit)
+            }
+        };
     }
 }
 
@@ -264,6 +297,33 @@ ${findByEndpoints}
             next(error);
         }
     }
+
+    async findByColumn(req, res, next) {
+        try {
+            const { column, value } = req.params;
+            const { page = 1, limit = 10 } = req.query;
+            const result = await ${serviceName}.findByColumnPaginated(column, value, page, limit);
+
+            const baseUrl = \`\${req.protocol}://\${req.get('host')}\${req.baseUrl}/search/\${column}/\${value}\`;
+            
+            result.links = {
+                self: \`\${baseUrl}?page=\${page}&limit=\${limit}\`,
+                first: \`\${baseUrl}?page=1&limit=\${limit}\`,
+                last: \`\${baseUrl}?page=\${result.meta.totalPages}&limit=\${limit}\`
+            };
+
+            if (page > 1) {
+                result.links.prev = \`\${baseUrl}?page=\${parseInt(page) - 1}&limit=\${limit}\`;
+            }
+            if (page < result.meta.totalPages) {
+                result.links.next = \`\${baseUrl}?page=\${parseInt(page) + 1}&limit=\${limit}\`;
+            }
+
+            res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
 }
 
 module.exports = new ${className}Controller();
@@ -275,14 +335,6 @@ module.exports = new ${className}Controller();
     const validatorName = `${camelCase(tableName)}Validator`;
     const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-    const findByRoutes = schema.columns
-      .filter((col) => col.name !== pk)
-      .map((col) => {
-        const methodName = `findBy${pascalCase(col.name)}`;
-        return `router.get('/search/${col.name}/:value', authMiddleware, ${controllerName}.${methodName});`;
-      })
-      .join("\n");
-
     return `
 const express = require('express');
 const router = express.Router();
@@ -291,10 +343,8 @@ const authMiddleware = require('../middlewares/authMiddleware');
 const ${validatorName} = require('../middlewares/validators/${validatorName}');
 
 router.get('/', authMiddleware, ${controllerName}.getAll);
+router.get('/search/:column/:value', authMiddleware, ${controllerName}.findByColumn);
 router.get('/:id', authMiddleware, ${controllerName}.getById);
-
-// Search by column routes
-${findByRoutes}
 
 router.post('/', authMiddleware, ${validatorName}.validate, ${controllerName}.create);
 router.post('/bulk', authMiddleware, ${validatorName}.validateBulk, ${controllerName}.createBulk);

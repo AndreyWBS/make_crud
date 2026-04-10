@@ -175,34 +175,75 @@ function buildResourcePaths(table, className) {
 }
 
 function buildSearchByFieldPaths(table, className, nonPkColumns) {
-  return nonPkColumns.reduce((acc, col) => {
-    acc[`/api/${table}/search/${col.name}/{value}`] = {
+  return {
+    [`/api/${table}/search/{column}/{value}`]: {
       get: {
         tags: [className],
-        summary: `Busca ${className} por ${col.name}`,
+        summary: `Busca registros de ${className} por coluna com paginação (LIKE para strings)`,
         security: [{ bearerAuth: [] }],
         parameters: [
           {
             in: "path",
+            name: "column",
+            required: true,
+            schema: { type: "string" },
+            description: "Nome da coluna para buscar",
+          },
+          {
+            in: "path",
             name: "value",
             required: true,
-            schema: toOpenApiSchema(col),
+            schema: { type: "string" },
+            description:
+              "Valor para buscar (LIKE para colunas varchar/text, igualdade exata para números)",
+          },
+          {
+            in: "query",
+            name: "page",
+            schema: { type: "integer", minimum: 1, default: 1 },
+            description: "Número da página",
+          },
+          {
+            in: "query",
+            name: "limit",
+            schema: { type: "integer", minimum: 1, default: 10 },
+            description: "Registros por página",
           },
         ],
         responses: {
           200: {
-            description: "Registro encontrado",
+            description: "Lista paginada de registros encontrados",
             content: {
               "application/json": {
-                schema: { $ref: `#/components/schemas/${className}` },
+                schema: {
+                  type: "object",
+                  properties: {
+                    data: {
+                      type: "array",
+                      items: { $ref: `#/components/schemas/${className}` },
+                    },
+                    meta: {
+                      type: "object",
+                      properties: {
+                        totalItems: { type: "integer" },
+                        totalPages: { type: "integer" },
+                        currentPage: { type: "integer" },
+                        itemsPerPage: { type: "integer" },
+                      },
+                    },
+                    links: {
+                      type: "object",
+                      additionalProperties: { type: "string" },
+                    },
+                  },
+                },
               },
             },
           },
         },
       },
-    };
-    return acc;
-  }, {});
+    },
+  };
 }
 
 function buildPaths(tables, schema) {
