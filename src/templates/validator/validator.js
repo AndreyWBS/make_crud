@@ -35,7 +35,21 @@ module.exports = {
       .join("\n        ");
 
     return `
+  /**
+   * @fileoverview Validador de payload para ${tableName}.
+   * @description Realiza validação estrutural de tipos e campos obrigatórios.
+   */
+
+  /**
+   * @class ${className}Validator
+   * @classdesc Middleware de validação para operações single e bulk.
+   */
 class ${className}Validator {
+    /**
+     * Valida payload unitário.
+     * @param {Record<string, any>} data Corpo da requisição.
+     * @returns {string[]} Lista de erros encontrados.
+     */
     validatePayload(data) {
       const errors = [];
 
@@ -44,6 +58,13 @@ class ${className}Validator {
       return errors;
     }
 
+    /**
+     * Middleware de validação para payload unitário.
+     * @param {import('express').Request} req
+     * @param {import('express').Response} res
+     * @param {import('express').NextFunction} next
+     * @returns {void}
+     */
     validate(req, res, next) {
         const data = req.body;
       const errors = this.validatePayload(data);
@@ -55,6 +76,13 @@ class ${className}Validator {
         next();
     }
 
+    /**
+     * Middleware de validação para payload em lote.
+     * @param {import('express').Request} req
+     * @param {import('express').Response} res
+     * @param {import('express').NextFunction} next
+     * @returns {void}
+     */
     validateBulk(req, res, next) {
         const dataArray = req.body;
         if (!Array.isArray(dataArray)) {

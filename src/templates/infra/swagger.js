@@ -31,11 +31,20 @@ module.exports = {
     };
 
     return `
+  /**
+   * @fileoverview Especificação OpenAPI gerada automaticamente.
+   * @type {import('openapi-types').OpenAPIV3.Document|Record<string, any>}
+   */
   module.exports = ${JSON.stringify(swaggerSpec, null, 4)};
   `;
   },
 
   app: (tables) => `
+  /**
+   * @fileoverview Composição principal da aplicação Express.
+   * @description Configura hardening, observabilidade, middlewares e rotas.
+   */
+
   const express = require('express');
   const path = require('path');
   const helmet = require('helmet');
@@ -144,6 +153,11 @@ module.exports = {
     return next();
   });
 
+  /**
+   * Resolve IP do cliente considerando proxy reverso.
+   * @param {import('express').Request} req
+   * @returns {string}
+   */
   function extractClientIp(req) {
     const forwarded = req.headers['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.trim()) {
@@ -152,6 +166,13 @@ module.exports = {
     return req.ip;
   }
 
+  /**
+   * Protege acesso ao Swagger por política de IP.
+   * @param {import('express').Request} req
+   * @param {import('express').Response} res
+   * @param {import('express').NextFunction} next
+   * @returns {void|import('express').Response}
+   */
   function guardSwaggerAccess(req, res, next) {
     if (env.SWAGGER_ALLOWED_IPS.length > 0) {
       const clientIp = extractClientIp(req);

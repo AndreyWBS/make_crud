@@ -15,8 +15,19 @@ module.exports = {
     );
 
     return `
+/**
+ * @fileoverview Cliente HTTP para o recurso ${tableName}.
+ * @description Encapsula chamadas CRUD e buscas por coluna.
+ */
 
+/**
+ * @class ${className}Client
+ * @classdesc Cliente de integração para endpoints /api/${tableName}.
+ */
 class ${className}Client {
+    /**
+     * @param {{ baseUrl?: string, token?: string|null }} [config={}]
+     */
     constructor(config = {}) {
         this.baseUrl = config.baseUrl || '/api/${tableName}';
         this.token = config.token || null;
@@ -24,7 +35,8 @@ class ${className}Client {
     }
 
     /**
-     * Configuração de Headers com Memoização Simples
+     * Monta headers padrão da requisição.
+     * @returns {Record<string, string>}
      */
     _getHeaders() {
         const headers = { 'Content-Type': 'application/json' };
@@ -33,7 +45,11 @@ class ${className}Client {
     }
 
     /**
-     * Centralizador de requisições para reduzir repetição de código
+     * Executor central de requisições HTTP.
+     * @param {string} endpoint Caminho relativo ou URL absoluta.
+     * @param {RequestInit} [options={}] Opções do fetch.
+     * @returns {Promise<any>}
+     * @throws {{status:number}} Lança objeto de erro padronizado quando !ok.
      */
     async _request(endpoint, options = {}) {
         const url = endpoint.startsWith('http') ? endpoint : \`\${this.baseUrl}\${endpoint}\`;
@@ -52,15 +68,32 @@ class ${className}Client {
 
     // --- Métodos CRUD Padrão ---
 
+    /**
+     * Lista registros com filtros e paginação.
+     * @param {Record<string, any>} [filters={}] Filtros opcionais.
+     * @param {number} [page=1] Página atual.
+     * @param {number} [limit=10] Itens por página.
+     * @returns {Promise<any>}
+     */
     async getAll(filters = {}, page = 1, limit = 10) {
         const params = new URLSearchParams({ page, limit, ...filters });
         return this._request(\`?\${params}\`);
     }
 
+    /**
+     * Busca por id.
+     * @param {string|number} id Identificador.
+     * @returns {Promise<any>}
+     */
     async getById(id) {
         return this._request(\`/\${id}\`);
     }
 
+    /**
+     * Cria registro.
+     * @param {Record<string, any>} data Payload.
+     * @returns {Promise<any>}
+     */
     async create(data) {
         return this._request('', {
             method: 'POST',
@@ -68,6 +101,11 @@ class ${className}Client {
         });
     }
 
+    /**
+     * Cria registros em lote.
+     * @param {Array<Record<string, any>>} dataArray Payload de lote.
+     * @returns {Promise<any>}
+     */
     async createBulk(dataArray) {
         return this._request('/bulk', {
             method: 'POST',
@@ -75,6 +113,12 @@ class ${className}Client {
         });
     }
 
+    /**
+     * Atualiza registro por id.
+     * @param {string|number} id Identificador.
+     * @param {Record<string, any>} data Payload.
+     * @returns {Promise<any>}
+     */
     async update(id, data) {
         return this._request(\`/\${id}\`, {
             method: 'PUT',
@@ -82,6 +126,11 @@ class ${className}Client {
         });
     }
 
+    /**
+     * Remove registro por id.
+     * @param {string|number} id Identificador.
+     * @returns {Promise<any>}
+     */
     async delete(id) {
         return this._request(\`/\${id}\`, { method: 'DELETE' });
     }
@@ -108,8 +157,9 @@ class ${className}Client {
       .join("\n")}
 
     /**
-     * Helper para verificar se um objeto é válido para esta entidade
-     * antes de enviar ao servidor
+     * Valida se os campos existem no metadata da entidade.
+     * @param {Record<string, any>} data Payload a validar.
+     * @returns {{isValid:boolean, errors:string[]}}
      */
     validate(data) {
         const errors = [];

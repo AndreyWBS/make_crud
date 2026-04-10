@@ -1,6 +1,19 @@
 module.exports = {
   appError: () => `
+/**
+ * @fileoverview Classe base de erro operacional da aplicação.
+ */
+
+/**
+ * @class AppError
+ * @extends Error
+ */
 class AppError extends Error {
+    /**
+     * @param {number} statusCode Status HTTP associado ao erro.
+     * @param {string} message Mensagem de erro segura para cliente.
+     * @param {Record<string, any>|null} [details=null] Detalhes adicionais em ambiente não produtivo.
+     */
     constructor(statusCode, message, details = null) {
         super(message);
         this.statusCode = statusCode;
@@ -14,6 +27,10 @@ module.exports = AppError;
 `,
 
   errorMiddleware: () => `
+/**
+ * @fileoverview Middleware global de tratamento de erros.
+ */
+
 const logger = require('../utils/logger');
 const AppError = require('../utils/AppError');
 
@@ -29,6 +46,14 @@ const MYSQL_ERROR_MAP = {
     ER_TRUNCATED_WRONG_VALUE: { status: 422, message: 'Unprocessable Entity: incorrect value for column.' },
 };
 
+/**
+ * Normaliza respostas de erro em formato seguro.
+ * @param {Error} err Erro capturado na cadeia do Express.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {import('express').Response}
+ */
 module.exports = (err, req, res, next) => {
   // Log estruturado da falha para investigação por correlationId.
   logger.error('request.error', {
@@ -93,6 +118,11 @@ module.exports = (err, req, res, next) => {
     });
 };
 
+/**
+ * Converte status code em texto HTTP amigável.
+ * @param {number} code Código HTTP.
+ * @returns {string}
+ */
 function httpStatusText(code) {
     const map = {
         400: 'Bad Request',
@@ -113,8 +143,18 @@ function httpStatusText(code) {
 `,
 
   logger: () => `
+/**
+ * @fileoverview Logger estruturado com redação automática de dados sensíveis.
+ */
+
   const SENSITIVE_KEY_REGEX = /(password|secret|token|authorization|cookie|api[_-]?key|refresh[_-]?token)/i;
 
+  /**
+   * Remove ou mascara campos sensíveis.
+   * @param {any} value Valor bruto.
+   * @param {string} [parentKey=''] Chave pai para heurística de sigilo.
+   * @returns {any}
+   */
   function redact(value, parentKey = '') {
     if (Array.isArray(value)) {
       return value.map((item) => redact(item, parentKey));
@@ -137,6 +177,13 @@ function httpStatusText(code) {
     return value;
   }
 
+  /**
+   * Emite linha de log JSON.
+   * @param {'info'|'warn'|'error'} level Nível.
+   * @param {string} event Nome estável do evento.
+   * @param {Record<string, any>} [meta={}] Metadados anexos.
+   * @returns {void}
+   */
   function log(level, event, meta = {}) {
     // Todos os logs seguem o mesmo envelope JSON para facilitar observabilidade.
     const payload = {
@@ -161,8 +208,19 @@ module.exports = {
 `,
 
   requestContextMiddleware: () => `
+/**
+ * @fileoverview Middleware de correlação de requisição.
+ */
+
 const { randomUUID } = require('crypto');
 
+/**
+ * Define correlationId em req/res para rastreabilidade.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {void}
+ */
 module.exports = (req, res, next) => {
   // Aceita correlationId externo e gera UUID quando ausente.
   const inboundId = req.headers['x-correlation-id'] || req.headers['x-request-id'];
@@ -173,14 +231,30 @@ module.exports = (req, res, next) => {
 `,
 
   requestLoggerMiddleware: () => `
+/**
+ * @fileoverview Middleware de logging de requisições HTTP.
+ */
+
 const logger = require('../utils/logger');
 
+/**
+ * Resolve nível de log com base no status HTTP.
+ * @param {number} code Status code de resposta.
+ * @returns {'info'|'warn'|'error'}
+ */
 function statusLevel(code) {
   if (code >= 500) return 'error';
   if (code >= 400) return 'warn';
   return 'info';
 }
 
+/**
+ * Registra evento http.request ao final da resposta.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {void}
+ */
 module.exports = (req, res, next) => {
   const startedAt = Date.now();
 
@@ -204,10 +278,21 @@ module.exports = (req, res, next) => {
 `,
 
   pagination: () => `
+/**
+ * @fileoverview Utilitários de paginação e normalização de parâmetros.
+ */
+
 const AppError = require('./AppError');
 
 const MAX_LIMIT = Number(process.env.API_MAX_LIMIT) || 100;
 
+/**
+ * Normaliza e valida paginação.
+ * @param {number|string} page Página solicitada.
+ * @param {number|string} limit Limite por página.
+ * @returns {{page:number, limit:number}}
+ * @throws {AppError} 400 para valores inválidos.
+ */
 function normalizePagination(page, limit) {
   const parsedPage = Number.parseInt(page, 10);
   const parsedLimit = Number.parseInt(limit, 10);
@@ -222,6 +307,12 @@ function normalizePagination(page, limit) {
   return { page: parsedPage, limit: parsedLimit };
 }
 
+/**
+ * Converte includeTotal para boolean.
+ * @param {boolean|string|undefined|null} value Valor recebido.
+ * @returns {boolean}
+ * @throws {AppError} 400 para formatos inválidos.
+ */
 function parseIncludeTotal(value) {
   if (value === undefined || value === null || value === '') return true;
   if (typeof value === 'boolean') return value;
@@ -240,6 +331,10 @@ module.exports = {
 `,
 
   server: () => `
+/**
+ * @fileoverview Bootstrap do servidor HTTP.
+ */
+
 const app = require('./app');
 const env = require('./config/env');
 const logger = require('./utils/logger');
@@ -276,6 +371,10 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
     ),
 
   database: () => `
+/**
+ * @fileoverview Configuração de pool MySQL com timeout e keep-alive.
+ */
+
 const mysql = require('mysql2/promise');
 const env = require('./env');
 
@@ -297,13 +396,27 @@ module.exports = pool;
 `,
 
   env: () => `
+/**
+ * @fileoverview Carregamento e validação de variáveis de ambiente.
+ */
+
 require('dotenv').config();
 
+  /**
+   * @param {string|number|undefined} value Valor bruto.
+   * @param {number} fallback Valor padrão.
+   * @returns {number}
+   */
   function parseNumber(value, fallback) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
   }
 
+  /**
+   * @param {string|boolean|undefined|null} value Valor bruto.
+   * @param {boolean} [fallback=false] Padrão.
+   * @returns {boolean}
+   */
   function parseBoolean(value, fallback = false) {
     if (value === undefined || value === null || value === '') return fallback;
     if (typeof value === 'boolean') return value;
@@ -313,6 +426,11 @@ require('dotenv').config();
     return fallback;
   }
 
+  /**
+   * @param {string|undefined} value Valor CSV.
+   * @param {string[]} [fallback=[]] Lista padrão.
+   * @returns {string[]}
+   */
   function parseList(value, fallback = []) {
     if (!value) return fallback;
     return String(value)
@@ -321,6 +439,10 @@ require('dotenv').config();
       .filter(Boolean);
   }
 
+  /**
+   * @param {string|undefined} value Mapa CSV no formato kid:secret.
+   * @returns {Record<string, string>}
+   */
   function parseJwtKeyMap(value) {
     const pairs = parseList(value);
     if (pairs.length === 0) return {};
@@ -339,6 +461,11 @@ require('dotenv').config();
     }, {});
   }
 
+  /**
+   * @param {string|undefined} secret Segredo JWT.
+   * @param {string} context Nome lógico da chave.
+   * @returns {void}
+   */
   function assertStrongSecret(secret, context) {
     if (!secret) {
       throw new Error(context + ' is required.');
@@ -414,14 +541,26 @@ module.exports = {
 `,
 
   authMiddleware: () => `
+/**
+ * @fileoverview Middleware de autenticação JWT Bearer.
+ */
+
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
   const AppError = require('../utils/AppError');
 
+  /**
+   * @param {import('express').NextFunction} next
+   * @returns {void}
+   */
   function unauthorized(next) {
     return next(new AppError(401, 'Unauthorized'));
   }
 
+  /**
+   * @param {string|undefined} authHeader Header Authorization bruto.
+   * @returns {string|null}
+   */
   function extractToken(authHeader) {
     if (!authHeader) return null;
 
@@ -433,6 +572,10 @@ const env = require('../config/env');
     return token;
   }
 
+  /**
+   * @param {string} token JWT recebido.
+   * @returns {string}
+   */
   function resolveSecret(token) {
     if (Object.keys(env.JWT_KEYS).length === 0) {
       return env.JWT_SECRET;
@@ -448,6 +591,10 @@ const env = require('../config/env');
     return env.JWT_KEYS[kid];
   }
 
+  /**
+   * @param {Record<string, any>} decoded Claims decodificadas.
+   * @returns {void}
+   */
   function assertRequiredClaims(decoded) {
     const requiredClaims = ['iss', 'aud', 'sub', 'exp', 'iat'];
     const missing = requiredClaims.filter((claim) => decoded[claim] === undefined || decoded[claim] === null || decoded[claim] === '');
@@ -457,6 +604,13 @@ const env = require('../config/env');
     }
   }
 
+/**
+ * Valida token e monta contexto de identidade da requisição.
+ * @param {import('express').Request} req
+ * @param {import('express').Response} res
+ * @param {import('express').NextFunction} next
+ * @returns {void}
+ */
 module.exports = (req, res, next) => {
     if (env.AUTH_DISABLED) {
     // Bypass controlado para ambiente de desenvolvimento/teste.
@@ -502,9 +656,17 @@ module.exports = (req, res, next) => {
 `,
 
   authorizeMiddleware: () => `
+  /**
+   * @fileoverview Middleware de autorização por papel e escopo.
+   */
+
   const AppError = require('../utils/AppError');
   const env = require('../config/env');
 
+  /**
+   * @param {string|string[]|undefined|null} value Valor bruto de papel/escopo.
+   * @returns {string[]}
+   */
   function normalizeArray(value) {
     if (!value) return [];
     if (Array.isArray(value)) return value.map((item) => String(item));
@@ -517,6 +679,11 @@ module.exports = (req, res, next) => {
     return [];
   }
 
+  /**
+   * Cria middleware de autorização com política declarativa.
+   * @param {{ anyRole?: string[], anyScope?: string[] }} [policy={}]
+   * @returns {import('express').RequestHandler}
+   */
   module.exports = ({ anyRole = [], anyScope = [] } = {}) => {
     const requiredRoles = new Set(anyRole.map((role) => String(role)));
     const requiredScopes = new Set(anyScope.map((scope) => String(scope)));
