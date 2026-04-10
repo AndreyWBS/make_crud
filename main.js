@@ -48,7 +48,12 @@ async function main() {
     )
     .addGenerator(new LayerGenerator(targetDir, "routes", crudTemplates.routes))
     .addGenerator(
-      new LayerGenerator(targetDir, "docs", crudTemplates.documentation, "md"),
+      new LayerGenerator(
+        targetDir,
+        "docs/rotas_md",
+        crudTemplates.documentation,
+        "md",
+      ),
     )
     .addGenerator(
       new LayerGenerator(
@@ -124,6 +129,69 @@ async function main() {
         targetDir,
         "src/docs/swagger/swaggerSpec.js",
         infraTemplates.swaggerSpec,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/00-visao-geral.md",
+        infraTemplates.architectureOverviewMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/01-fluxo-requisicao.md",
+        infraTemplates.requestFlowMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/02-erros-e-tratativas.md",
+        infraTemplates.errorCatalogMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/README.md",
+        infraTemplates.middlewaresIndexMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/01-auth-middleware.md",
+        infraTemplates.authMiddlewareMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/02-authorize-middleware.md",
+        infraTemplates.authorizeMiddlewareMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/03-request-context-middleware.md",
+        infraTemplates.requestContextMiddlewareMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/04-request-logger-middleware.md",
+        infraTemplates.requestLoggerMiddlewareMd,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        targetDir,
+        "src/docs/technical/middlewares/05-error-middleware.md",
+        infraTemplates.errorMiddlewareMd,
       ),
     )
     .addGenerator(

@@ -54,12 +54,15 @@ module.exports = {
 
   const app = express();
 
+  // Hardening base da aplicação HTTP.
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
 
+  // Contexto de rastreio e logging por requisição.
   app.use(requestContextMiddleware);
   app.use(requestLoggerMiddleware);
 
+  // Cabeçalhos de segurança e proteção de navegação.
   app.use(helmet({
     contentSecurityPolicy: false,
     hsts: env.NODE_ENV === 'production' ? { maxAge: 15552000, includeSubDomains: true, preload: true } : false,
@@ -81,6 +84,7 @@ module.exports = {
 
   app.use(express.json({ limit: env.API_JSON_LIMIT }));
 
+  // Protege contra querystring abusiva e URLs excessivamente longas.
   app.use((req, res, next) => {
     const queryCount = Object.keys(req.query || {}).length;
     if (queryCount > env.API_MAX_QUERY_PARAMS) {
@@ -126,10 +130,12 @@ module.exports = {
     delayMs: () => env.SLOW_DOWN_DELAY_MS,
   });
 
+  // Camada anti-abuso global para todos os endpoints de API.
   app.use('/api', globalRateLimit);
   app.use('/api', globalSlowDown);
 
   const SENSITIVE_ROUTE_PATTERN = new RegExp('^/api/[^/]+/search/');
+  // Endpoints mais sensíveis recebem limite mais agressivo.
   app.use((req, res, next) => {
     const isSensitiveRoute = SENSITIVE_ROUTE_PATTERN.test(req.path) || req.path === '/token' || req.path === '/login';
     if (isSensitiveRoute) {
@@ -163,6 +169,7 @@ module.exports = {
   }
 
   if (env.SWAGGER_ENABLED) {
+    // Swagger pode ser protegido por IP e perfil administrativo.
     const swaggerGuards = [guardSwaggerAccess];
     if (env.SWAGGER_REQUIRE_ADMIN) {
       swaggerGuards.push(authMiddleware, authorize({ anyRole: ['admin'] }));
@@ -182,6 +189,7 @@ module.exports = {
 
   ${tables.map((t) => `app.use('/api/${t}', ${camelCase(t)}Route);`).join("\n")}
 
+  // Tratamento centralizado de erros deve ser o último middleware.
   app.use(errorMiddleware);
   module.exports = app;
   `,

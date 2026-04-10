@@ -30,6 +30,7 @@ const MYSQL_ERROR_MAP = {
 };
 
 module.exports = (err, req, res, next) => {
+  // Log estruturado da falha para investigação por correlationId.
   logger.error('request.error', {
     correlationId: req.id,
     method: req.method,
@@ -137,6 +138,7 @@ function httpStatusText(code) {
   }
 
   function log(level, event, meta = {}) {
+    // Todos os logs seguem o mesmo envelope JSON para facilitar observabilidade.
     const payload = {
       timestamp: new Date().toISOString(),
       level,
@@ -162,6 +164,7 @@ module.exports = {
 const { randomUUID } = require('crypto');
 
 module.exports = (req, res, next) => {
+  // Aceita correlationId externo e gera UUID quando ausente.
   const inboundId = req.headers['x-correlation-id'] || req.headers['x-request-id'];
   req.id = typeof inboundId === 'string' && inboundId.trim() ? inboundId.trim() : randomUUID();
   res.setHeader('x-correlation-id', req.id);
@@ -182,6 +185,7 @@ module.exports = (req, res, next) => {
   const startedAt = Date.now();
 
   res.on('finish', () => {
+    // Registra requisição ao final para capturar status e latência reais.
     const durationMs = Date.now() - startedAt;
     const level = statusLevel(res.statusCode);
     logger[level]('http.request', {
@@ -455,6 +459,7 @@ const env = require('../config/env');
 
 module.exports = (req, res, next) => {
     if (env.AUTH_DISABLED) {
+    // Bypass controlado para ambiente de desenvolvimento/teste.
         req.auth = { sub: 'dev', roles: ['admin'], scope: 'admin' };
         req.userId = 'dev';
         return next();
@@ -517,6 +522,7 @@ module.exports = (req, res, next) => {
     const requiredScopes = new Set(anyScope.map((scope) => String(scope)));
 
     return (req, res, next) => {
+      // Em modo sem auth, autorização também é ignorada.
       if (env.AUTH_DISABLED) return next();
 
       const auth = req.auth || {};
