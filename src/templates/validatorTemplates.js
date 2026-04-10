@@ -1,31 +1,43 @@
-const { pascalCase, camelCase } = require('../utils/stringUtils');
+const { pascalCase, camelCase } = require("../utils/stringUtils");
 
 module.exports = {
-    validator: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        
-        // Mapeamento simples de tipos MySQL para validações JS básicas
-        const validationLogic = schema.columns
-            .filter(col => col.extra !== 'auto_increment') // Não validar campos auto-increment
-            .map(col => {
-                const checks = [];
-                
-                // Verificação de obrigatoriedade
-                if (!col.nullable && col.default === null) {
-                    checks.push(`if (data.${col.name} === undefined || data.${col.name} === null) errors.push('${col.name} is required');`);
-                }
+  validator: (tableName, schema) => {
+    const className = pascalCase(tableName);
 
-                // Verificação de tipo básica
-                if (col.type.includes('int') || col.type.includes('decimal') || col.type.includes('float')) {
-                    checks.push(`if (data.${col.name} !== undefined && data.${col.name} !== null && typeof data.${col.name} !== 'number') errors.push('${col.name} must be a number');`);
-                } else if (col.type.includes('varchar') || col.type.includes('text')) {
-                    checks.push(`if (data.${col.name} !== undefined && data.${col.name} !== null && typeof data.${col.name} !== 'string') errors.push('${col.name} must be a string');`);
-                }
+    // Mapeamento simples de tipos MySQL para validações JS básicas
+    const validationLogic = schema.columns
+      .filter((col) => col.extra !== "auto_increment") // Não validar campos auto-increment
+      .map((col) => {
+        const checks = [];
+        const fieldAccess = `data[${JSON.stringify(col.name)}]`;
 
-                return checks.join('\n        ');
-            }).join('\n        ');
+        // Verificação de obrigatoriedade
+        if (!col.nullable && col.default === null) {
+          checks.push(
+            `if (${fieldAccess} === undefined || ${fieldAccess} === null) errors.push('${col.name} is required');`,
+          );
+        }
 
-        return `
+        // Verificação de tipo básica
+        if (
+          col.type.includes("int") ||
+          col.type.includes("decimal") ||
+          col.type.includes("float")
+        ) {
+          checks.push(
+            `if (${fieldAccess} !== undefined && ${fieldAccess} !== null && typeof ${fieldAccess} !== 'number') errors.push('${col.name} must be a number');`,
+          );
+        } else if (col.type.includes("varchar") || col.type.includes("text")) {
+          checks.push(
+            `if (${fieldAccess} !== undefined && ${fieldAccess} !== null && typeof ${fieldAccess} !== 'string') errors.push('${col.name} must be a string');`,
+          );
+        }
+
+        return checks.join("\n        ");
+      })
+      .join("\n        ");
+
+    return `
 class ${className}Validator {
     validate(req, res, next) {
         const data = req.body;
@@ -65,5 +77,5 @@ class ${className}Validator {
 
 module.exports = new ${className}Validator();
 `;
-    }
+  },
 };

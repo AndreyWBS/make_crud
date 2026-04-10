@@ -1,33 +1,44 @@
-const { camelCase } = require('../utils/stringUtils');
+const { camelCase, pascalCase } = require("../utils/stringUtils");
 
 module.exports = {
-    errorMiddleware: () => `
+  errorMiddleware: () => `
 const logger = require('../utils/logger');
 module.exports = (err, req, res, next) => {
     logger.error(err.stack);
     res.status(err.status || 500).json({ error: err.message || 'Internal Server Error' });
 };
 `,
-    logger: () => `
+  logger: () => `
 module.exports = {
     info: (msg) => console.log(\`[INFO] \${new Date().toISOString()}: \${msg}\`),
     error: (msg) => console.error(\`[ERROR] \${new Date().toISOString()}: \${msg}\`)
 };
 `,
-    server: () => `
+  server: () => `
 const app = require('./app');
 const env = require('./config/env');
 const logger = require('./utils/logger');
 app.listen(env.PORT, () => logger.info(\`Server running on port \${env.PORT}\`));
 `,
-    packageJson: (tables) => JSON.stringify({
+  packageJson: (tables) =>
+    JSON.stringify(
+      {
         name: "generated-api",
         version: "1.0.0",
         main: "src/server.js",
         scripts: { start: "node src/server.js" },
-        dependencies: { express: "^4.18.2", mysql2: "^3.6.1", dotenv: "^16.3.1", jsonwebtoken: "^9.0.2" }
-    }, null, 4),
-    database: () => `
+        dependencies: {
+          express: "^4.18.2",
+          mysql2: "^3.6.1",
+          dotenv: "^16.3.1",
+          jsonwebtoken: "^9.0.2",
+          "swagger-ui-express": "^5.0.1",
+        },
+      },
+      null,
+      4,
+    ),
+  database: () => `
 const mysql = require('mysql2/promise');
 const env = require('./env');
 
@@ -36,6 +47,7 @@ const pool = mysql.createPool({
     user: env.DB_USER,
     password: env.DB_PASSWORD,
     database: env.DB_NAME,
+    port: env.DB_PORT,
     waitForConnections: true,
     connectionLimit: 10,
     queueLimit: 0
@@ -44,7 +56,7 @@ const pool = mysql.createPool({
 module.exports = pool;
 `,
 
-    env: () => `
+  env: () => `
 require('dotenv').config();
 
 module.exports = {
@@ -53,11 +65,12 @@ module.exports = {
     DB_USER: process.env.DB_USER,
     DB_PASSWORD: process.env.DB_PASSWORD,
     DB_NAME: process.env.DB_NAME,
+    DB_PORT: Number(process.env.DB_PORT) || 3306,
     JWT_SECRET: process.env.JWT_SECRET || 'secret'
 };
 `,
 
-    authMiddleware: () => `
+  authMiddleware: () => `
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 
@@ -79,24 +92,362 @@ module.exports = (req, res, next) => {
 };
 `,
 
-    app: (tables) => `
-const express = require('express');
-const errorMiddleware = require('./middlewares/errorMiddleware');
-${tables.map(t => `const ${camelCase(t)}Route = require('./routes/${camelCase(t)}Route');`).join('\n')}
+  swaggerSpec: (tables, schema) => {
+    const toOpenApiSchema = (column) => {
+      const dbType = String(column.type || "").toLowerCase();
 
-const app = express();
-app.use(express.json());
+      if (dbType.includes("tinyint(1)") || dbType.includes("bool")) {
+        return { type: "boolean", example: true };
+      }
 
-${tables.map(t => `app.use('/api/${t}', ${camelCase(t)}Route);`).join('\n')}
+      if (dbType.includes("int")) {
+        return { type: "integer", example: 1 };
+      }
 
-app.use(errorMiddleware);
-module.exports = app;
-`,
-    indexDocumentation: (tables) => {
-        const tableLinks = tables.map(t => {
-            const className = t.charAt(0).toUpperCase() + t.slice(1); // Simples PascalCase
-            const fileName = `${camelCase(t)}Html.html`;
-            return `
+      if (
+        dbType.includes("decimal") ||
+        dbType.includes("float") ||
+        dbType.includes("double")
+      ) {
+        return { type: "number", example: 10.5 };
+      }
+
+      if (
+        dbType.includes("date") ||
+        dbType.includes("time") ||
+        dbType.includes("year")
+      ) {
+        return {
+          type: "string",
+          format: "date-time",
+          example: "2026-01-01T00:00:00.000Z",
+        };
+      }
+
+      if (dbType.includes("json")) {
+        return {
+          type: "object",
+          additionalProperties: true,
+          example: { key: "value" },
+        };
+      }
+
+      return { type: "string", example: "texto" };
+    };
+
+    const buildRequestBodySchema = (table) => {
+      const columns = (schema[table] && schema[table].columns) || [];
+      const pk = columns.find((c) => c.key === "PRI")?.name || "id";
+      const nonPkColumns = columns.filter((c) => c.name !== pk);
+      const properties = nonPkColumns.reduce((acc, col) => {
+        acc[col.name] = toOpenApiSchema(col);
+        return acc;
+      }, {});
+
+      return {
+        type: "object",
+        properties,
+        required: nonPkColumns
+          .filter((c) => c.nullable === "NO" && c.default === null)
+          .map((c) => c.name),
+      };
+    };
+
+    const buildEntitySchema = (table) => {
+      const columns = (schema[table] && schema[table].columns) || [];
+      const properties = columns.reduce((acc, col) => {
+        acc[col.name] = toOpenApiSchema(col);
+        return acc;
+      }, {});
+
+      return {
+        type: "object",
+        properties,
+      };
+    };
+
+    const componentsSchemas = tables.reduce((acc, table) => {
+      const className = pascalCase(table);
+      acc[className] = buildEntitySchema(table);
+      acc[`${className}Input`] = buildRequestBodySchema(table);
+      return acc;
+    }, {});
+
+    const paths = {};
+
+    tables.forEach((table) => {
+      const className = pascalCase(table);
+      const columns = (schema[table] && schema[table].columns) || [];
+      const pk = columns.find((c) => c.key === "PRI")?.name || "id";
+      const nonPkColumns = columns.filter((c) => c.name !== pk);
+
+      paths[`/api/${table}`] = {
+        get: {
+          tags: [className],
+          summary: `Lista registros de ${className}`,
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "query",
+              name: "page",
+              schema: { type: "integer", minimum: 1, default: 1 },
+            },
+            {
+              in: "query",
+              name: "limit",
+              schema: { type: "integer", minimum: 1, default: 10 },
+            },
+          ],
+          responses: {
+            200: {
+              description: "Lista paginada de registros",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      data: {
+                        type: "array",
+                        items: { $ref: `#/components/schemas/${className}` },
+                      },
+                      meta: {
+                        type: "object",
+                        properties: {
+                          totalItems: { type: "integer" },
+                          totalPages: { type: "integer" },
+                          currentPage: { type: "integer" },
+                          itemsPerPage: { type: "integer" },
+                        },
+                      },
+                      links: {
+                        type: "object",
+                        additionalProperties: { type: "string" },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        post: {
+          tags: [className],
+          summary: `Cria um registro de ${className}`,
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: `#/components/schemas/${className}Input` },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: "Registro criado",
+              content: {
+                "application/json": {
+                  schema: { $ref: `#/components/schemas/${className}` },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      paths[`/api/${table}/bulk`] = {
+        post: {
+          tags: [className],
+          summary: `Cria registros em lote de ${className}`,
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "array",
+                  items: { $ref: `#/components/schemas/${className}Input` },
+                },
+              },
+            },
+          },
+          responses: {
+            201: {
+              description: "Registros criados",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      affectedRows: { type: "integer" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      paths[`/api/${table}/{id}`] = {
+        get: {
+          tags: [className],
+          summary: `Busca ${className} por ID`,
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            200: {
+              description: "Registro encontrado",
+              content: {
+                "application/json": {
+                  schema: { $ref: `#/components/schemas/${className}` },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: [className],
+          summary: `Atualiza ${className} por ID`,
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: { $ref: `#/components/schemas/${className}Input` },
+              },
+            },
+          },
+          responses: {
+            200: {
+              description: "Registro atualizado",
+              content: {
+                "application/json": {
+                  schema: { $ref: `#/components/schemas/${className}` },
+                },
+              },
+            },
+          },
+        },
+        delete: {
+          tags: [className],
+          summary: `Remove ${className} por ID`,
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            {
+              in: "path",
+              name: "id",
+              required: true,
+              schema: { type: "string" },
+            },
+          ],
+          responses: {
+            204: { description: "Removido com sucesso" },
+          },
+        },
+      };
+
+      nonPkColumns.forEach((col) => {
+        paths[`/api/${table}/search/${col.name}/{value}`] = {
+          get: {
+            tags: [className],
+            summary: `Busca ${className} por ${col.name}`,
+            security: [{ bearerAuth: [] }],
+            parameters: [
+              {
+                in: "path",
+                name: "value",
+                required: true,
+                schema: toOpenApiSchema(col),
+              },
+            ],
+            responses: {
+              200: {
+                description: "Registro encontrado",
+                content: {
+                  "application/json": {
+                    schema: { $ref: `#/components/schemas/${className}` },
+                  },
+                },
+              },
+            },
+          },
+        };
+      });
+    });
+
+    const swaggerSpec = {
+      openapi: "3.0.3",
+      info: {
+        title: "Generated CRUD API",
+        version: "1.0.0",
+        description: "Documentacao gerada automaticamente pelo generator.",
+      },
+      servers: [
+        { url: "http://localhost:3000", description: "Servidor local" },
+      ],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: "http",
+            scheme: "bearer",
+            bearerFormat: "JWT",
+          },
+        },
+        schemas: componentsSchemas,
+      },
+      paths,
+    };
+
+    return `
+  module.exports = ${JSON.stringify(swaggerSpec, null, 4)};
+  `;
+  },
+  app: (tables) => `
+  const express = require('express');
+  const path = require('path');
+  const swaggerUi = require('swagger-ui-express');
+  const swaggerSpec = require('./docs/swagger/swaggerSpec');
+  const errorMiddleware = require('./middlewares/errorMiddleware');
+  ${tables.map((t) => `const ${camelCase(t)}Route = require('./routes/${camelCase(t)}Route');`).join("\n")}
+
+  const app = express();
+  app.use(express.json());
+
+  app.get('/api-docs.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+
+  app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+  app.use('/docs', express.static(path.join(__dirname, 'docs/html')));
+
+  ${tables.map((t) => `app.use('/api/${t}', ${camelCase(t)}Route);`).join("\n")}
+
+  app.use(errorMiddleware);
+  module.exports = app;
+  `,
+  indexDocumentation: (tables) => {
+    const tableLinks = tables
+      .map((t) => {
+        const className = t.charAt(0).toUpperCase() + t.slice(1); // Simples PascalCase
+        const fileName = `${camelCase(t)}Html.html`;
+        return `
                 <div class="col-md-4 mb-4">
                     <div class="card h-100 shadow-sm table-card">
                         <div class="card-body text-center">
@@ -109,9 +460,10 @@ module.exports = app;
                         </div>
                     </div>
                 </div>`;
-        }).join('');
+      })
+      .join("");
 
-        return `
+    return `
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -158,13 +510,13 @@ module.exports = app;
 </body>
 </html>
 `;
-    }
-    ,
-    envfile: () => `PORT=3000
+  },
+  envfile: () => `PORT=3000
 DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=
 DB_NAME=my_database
+DB_PORT=3306
 JWT_SECRET=your_jwt_secret
-`   
+`,
 };

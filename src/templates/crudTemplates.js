@@ -1,10 +1,15 @@
-const { pascalCase, camelCase } = require('../utils/stringUtils');
+const { pascalCase, camelCase } = require("../utils/stringUtils");
 
 module.exports = {
-    model: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        let fields = schema.columns.map(col => `        this.${col.name} = data.${col.name};`).join('\n');
-        return `
+  model: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    let fields = schema.columns
+      .map(
+        (col) =>
+          `        this[${JSON.stringify(col.name)}] = data[${JSON.stringify(col.name)}];`,
+      )
+      .join("\n");
+    return `
 class ${className} {
     constructor(data) {
 ${fields}
@@ -13,23 +18,24 @@ ${fields}
 
 module.exports = ${className};
 `;
-    },
+  },
 
-    repository: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  repository: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        const findByMethods = schema.columns
-            .filter(col => col.name !== pk) // Evitar duplicar o método da PK
-            .map(col => {
-                const methodName = `findBy${pascalCase(col.name)}`;
-                return `    async ${methodName}(value) {
+    const findByMethods = schema.columns
+      .filter((col) => col.name !== pk) // Evitar duplicar o método da PK
+      .map((col) => {
+        const methodName = `findBy${pascalCase(col.name)}`;
+        return `    async ${methodName}(value) {
         const [rows] = await pool.query('SELECT * FROM ${tableName} WHERE ${col.name} = ?', [value]);
         return rows[0];
     }`;
-            }).join('\n\n');
+      })
+      .join("\n\n");
 
-        return `
+    return `
 const pool = require('../config/database');
 
 class ${className}Repository {
@@ -66,7 +72,7 @@ ${findByMethods}
 
     async create(data) {
         const [result] = await pool.query('INSERT INTO ${tableName} SET ?', [data]);
-        return { ${pk}: result.insertId, ...data };
+        return { [${JSON.stringify(pk)}]: result.insertId, ...data };
     }
 
     async createBulk(dataArray) {
@@ -80,7 +86,7 @@ ${findByMethods}
 
     async update(id, data) {
         await pool.query('UPDATE ${tableName} SET ? WHERE ${pk} = ?', [data, id]);
-        return { ${pk}: id, ...data };
+        return { [${JSON.stringify(pk)}]: id, ...data };
     }
 
     async delete(id) {
@@ -91,25 +97,26 @@ ${findByMethods}
 
 module.exports = new ${className}Repository();
 `;
-    },
+  },
 
-    service: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const repoName = `${camelCase(tableName)}Repository`;
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  service: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const repoName = `${camelCase(tableName)}Repository`;
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        const findByMethods = schema.columns
-            .filter(col => col.name !== pk)
-            .map(col => {
-                const methodName = `findBy${pascalCase(col.name)}`;
-                return `    async ${methodName}(value) {
+    const findByMethods = schema.columns
+      .filter((col) => col.name !== pk)
+      .map((col) => {
+        const methodName = `findBy${pascalCase(col.name)}`;
+        return `    async ${methodName}(value) {
         const item = await ${repoName}.${methodName}(value);
         if (!item) throw new Error('${className} with ${col.name} ' + value + ' not found');
         return item;
     }`;
-            }).join('\n\n');
+      })
+      .join("\n\n");
 
-        return `
+    return `
 const ${repoName} = require('../repositories/${repoName}');
 
 class ${className}Service {
@@ -157,18 +164,18 @@ ${findByMethods}
 
 module.exports = new ${className}Service();
 `;
-    },
+  },
 
-    controller: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const serviceName = `${camelCase(tableName)}Service`;
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  controller: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const serviceName = `${camelCase(tableName)}Service`;
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        const findByEndpoints = schema.columns
-            .filter(col => col.name !== pk)
-            .map(col => {
-                const methodName = `findBy${pascalCase(col.name)}`;
-                return `    async ${methodName}(req, res, next) {
+    const findByEndpoints = schema.columns
+      .filter((col) => col.name !== pk)
+      .map((col) => {
+        const methodName = `findBy${pascalCase(col.name)}`;
+        return `    async ${methodName}(req, res, next) {
         try {
             const item = await ${serviceName}.${methodName}(req.params.value);
             res.json(item);
@@ -176,9 +183,10 @@ module.exports = new ${className}Service();
             next(error);
         }
     }`;
-            }).join('\n\n');
+      })
+      .join("\n\n");
 
-        return `
+    return `
 const ${serviceName} = require('../services/${serviceName}');
 
 class ${className}Controller {
@@ -259,21 +267,22 @@ ${findByEndpoints}
 
 module.exports = new ${className}Controller();
 `;
-    },
+  },
 
-    routes: (tableName, schema) => {
-        const controllerName = `${camelCase(tableName)}Controller`;
-        const validatorName = `${camelCase(tableName)}Validator`;
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  routes: (tableName, schema) => {
+    const controllerName = `${camelCase(tableName)}Controller`;
+    const validatorName = `${camelCase(tableName)}Validator`;
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        const findByRoutes = schema.columns
-            .filter(col => col.name !== pk)
-            .map(col => {
-                const methodName = `findBy${pascalCase(col.name)}`;
-                return `router.get('/search/${col.name}/:value', authMiddleware, ${controllerName}.${methodName});`;
-            }).join('\n');
+    const findByRoutes = schema.columns
+      .filter((col) => col.name !== pk)
+      .map((col) => {
+        const methodName = `findBy${pascalCase(col.name)}`;
+        return `router.get('/search/${col.name}/:value', authMiddleware, ${controllerName}.${methodName});`;
+      })
+      .join("\n");
 
-        return `
+    return `
 const express = require('express');
 const router = express.Router();
 const ${controllerName} = require('../controllers/${controllerName}');
@@ -293,38 +302,51 @@ router.delete('/:id', authMiddleware, ${controllerName}.delete);
 
 module.exports = router;
 `;
-    },
+  },
 
-    documentation: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  documentation: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        // Função auxiliar para mapear o tipo do banco para um valor de exemplo no JSON
-        const getExampleValue = (type = 'string') => {
-            const t = type.toLowerCase();
-            if (t.includes('int') || t.includes('float') || t.includes('double') || t.includes('decimal')) return 0;
-            if (t.includes('bool') || t === 'tinyint(1)') return true;
-            if (t.includes('date') || t.includes('time')) return "2026-02-24T12:00:00Z";
-            if (t.includes('json')) return { chave: "valor_exemplo" };
-            return `<${type}>`; // Para varchar, text, char, enum, etc., mostra o tipo como string
-        };
+    // Função auxiliar para mapear o tipo do banco para um valor de exemplo no JSON
+    const getExampleValue = (type = "string") => {
+      const t = type.toLowerCase();
+      if (
+        t.includes("int") ||
+        t.includes("float") ||
+        t.includes("double") ||
+        t.includes("decimal")
+      )
+        return 0;
+      if (t.includes("bool") || t === "tinyint(1)") return true;
+      if (t.includes("date") || t.includes("time"))
+        return "2026-02-24T12:00:00Z";
+      if (t.includes("json")) return { chave: "valor_exemplo" };
+      return `<${type}>`; // Para varchar, text, char, enum, etc., mostra o tipo como string
+    };
 
-        // Gera o objeto de exemplo preenchido com os tipos corretos
-        const exampleObject = {};
-        schema.columns.filter(c => c.name !== pk).forEach(col => {
-            exampleObject[col.name] = getExampleValue(col.type);
-        });
+    // Gera o objeto de exemplo preenchido com os tipos corretos
+    const exampleObject = {};
+    schema.columns
+      .filter((c) => c.name !== pk)
+      .forEach((col) => {
+        exampleObject[col.name] = getExampleValue(col.type);
+      });
 
-        const jsonExample = JSON.stringify(exampleObject, null, 2);
-        // Prepara a indentação para o bulk (array de objetos)
-        const indentedJsonExample = jsonExample.split('\n').map(line => `  ${line}`).join('\n').trim();
+    const jsonExample = JSON.stringify(exampleObject, null, 2);
+    // Prepara a indentação para o bulk (array de objetos)
+    const indentedJsonExample = jsonExample
+      .split("\n")
+      .map((line) => `  ${line}`)
+      .join("\n")
+      .trim();
 
-        // Gera os blocos de documentação para as rotas de busca dinâmicas
-        const searchDocs = schema.columns
-            .filter(col => col.name !== pk)
-            .map(col => {
-                const routeName = col.name;
-                return `### Buscar por ${pascalCase(routeName)}
+    // Gera os blocos de documentação para as rotas de busca dinâmicas
+    const searchDocs = schema.columns
+      .filter((col) => col.name !== pk)
+      .map((col) => {
+        const routeName = col.name;
+        return `### Buscar por ${pascalCase(routeName)}
 Busca registros específicos baseados na coluna \`${routeName}\`.
 
 - **Método:** \`GET\`
@@ -334,7 +356,7 @@ Busca registros específicos baseados na coluna \`${routeName}\`.
 **Parâmetros de Rota:**
 | Nome | Tipo | Descrição |
 |------|------|-----------|
-| \`value\` | \`${col.type || 'string'}\` | Valor do campo ${routeName} para a busca |
+| \`value\` | \`${col.type || "string"}\` | Valor do campo ${routeName} para a busca |
 
 **Exemplo de Resposta (Status 200):**
 \`\`\`json
@@ -344,9 +366,10 @@ Busca registros específicos baseados na coluna \`${routeName}\`.
 }
 \`\`\`
 ---`;
-            }).join('\n\n');
+      })
+      .join("\n\n");
 
-        return `
+    return `
 # Documentação da API: ${className}
 
 Bem-vindo à documentação dos endpoints para a entidade **${className}**.
@@ -500,33 +523,43 @@ Abaixo estão listadas as rotas dinâmicas geradas automaticamente para consulta
 
 ${searchDocs}
 `;
-    },
-    documentationHtml: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  },
+  documentationHtml: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        // Helper para valores de exemplo
-        const getExampleValue = (type = 'string') => {
-            const t = type.toLowerCase();
-            if (t.includes('int') || t.includes('float') || t.includes('double') || t.includes('decimal')) return 0;
-            if (t.includes('bool') || t === 'tinyint(1)') return true;
-            if (t.includes('date') || t.includes('time')) return "2026-02-24T12:00:00Z";
-            if (t.includes('json')) return { chave: "valor_exemplo" };
-            return `exemplo_${type}`;
-        };
+    // Helper para valores de exemplo
+    const getExampleValue = (type = "string") => {
+      const t = type.toLowerCase();
+      if (
+        t.includes("int") ||
+        t.includes("float") ||
+        t.includes("double") ||
+        t.includes("decimal")
+      )
+        return 0;
+      if (t.includes("bool") || t === "tinyint(1)") return true;
+      if (t.includes("date") || t.includes("time"))
+        return "2026-02-24T12:00:00Z";
+      if (t.includes("json")) return { chave: "valor_exemplo" };
+      return `exemplo_${type}`;
+    };
 
-        const exampleObject = {};
-        schema.columns.filter(c => c.name !== pk).forEach(col => {
-            exampleObject[col.name] = getExampleValue(col.type);
-        });
+    const exampleObject = {};
+    schema.columns
+      .filter((c) => c.name !== pk)
+      .forEach((col) => {
+        exampleObject[col.name] = getExampleValue(col.type);
+      });
 
-        const jsonExample = JSON.stringify(exampleObject, null, 2);
-        const bulkExample = JSON.stringify([exampleObject, exampleObject], null, 2);
+    const jsonExample = JSON.stringify(exampleObject, null, 2);
+    const bulkExample = JSON.stringify([exampleObject, exampleObject], null, 2);
 
-        // Gerar acordeões para buscas específicas
-        const searchAccordionItems = schema.columns
-            .filter(col => col.name !== pk)
-            .map((col, index) => `
+    // Gerar acordeões para buscas específicas
+    const searchAccordionItems = schema.columns
+      .filter((col) => col.name !== pk)
+      .map(
+        (col, index) => `
                 <div class="accordion-item">
                     <h2 class="accordion-header" id="headingSearch${index}">
                         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSearch${index}">
@@ -542,9 +575,11 @@ ${searchDocs}
                             </table>
                         </div>
                     </div>
-                </div>`).join('');
+                </div>`,
+      )
+      .join("");
 
-        return `
+    return `
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -667,7 +702,7 @@ ${searchDocs}
                 </section>
 
                 <footer class="mt-5 py-3 text-center text-muted border-top">
-                    Documentação gerada em ${new Date().toLocaleDateString('pt-BR')}
+                    Documentação gerada em ${new Date().toLocaleDateString("pt-BR")}
                 </footer>
             </main>
         </div>
@@ -679,18 +714,22 @@ ${searchDocs}
 </body>
 </html>
 `;
-    },
-    apiClient: (tableName, schema) => {
-        const className = pascalCase(tableName);
-        const pk = schema.columns.find(c => c.key === 'PRI')?.name || 'id';
+  },
+  apiClient: (tableName, schema) => {
+    const className = pascalCase(tableName);
+    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
 
-        // Mapeamento de colunas para validação básica no Front
-        const columnMetadata = JSON.stringify(schema.columns.reduce((acc, col) => {
-            acc[col.name] = { type: col.type, isPk: col.name === pk };
-            return acc;
-        }, {}), null, 4);
+    // Mapeamento de colunas para validação básica no Front
+    const columnMetadata = JSON.stringify(
+      schema.columns.reduce((acc, col) => {
+        acc[col.name] = { type: col.type, isPk: col.name === pk };
+        return acc;
+      }, {}),
+      null,
+      4,
+    );
 
-        return `
+    return `
 
 class ${className}Client {
     constructor(config = {}) {
@@ -764,20 +803,24 @@ class ${className}Client {
 
     // --- Métodos de Busca Dinâmicos por Coluna ---
 
-    ${schema.columns.map(col => {
+    ${schema.columns
+      .map((col) => {
         const methodName = `findBy${pascalCase(col.name)}`;
-        const isNumeric = col.type.toLowerCase().includes('int') || col.type.toLowerCase().includes('decimal');
-        
+        const isNumeric =
+          col.type.toLowerCase().includes("int") ||
+          col.type.toLowerCase().includes("decimal");
+
         return `
     /**
      * Busca específica pela coluna ${col.name} (${col.type})
      */
     async ${methodName}(value) {
         if (value === undefined || value === null) throw new Error('Valor para ${col.name} é obrigatório');
-        ${isNumeric ? `if (isNaN(value)) console.warn('Aviso: ${col.name} espera um valor numérico.');` : ''}
+        ${isNumeric ? `if (isNaN(value)) console.warn('Aviso: ${col.name} espera um valor numérico.');` : ""}
         return this._request(\`/search/${col.name}/\${encodeURIComponent(value)}\`);
     }`;
-    }).join('\n')}
+      })
+      .join("\n")}
 
     /**
      * Helper para verificar se um objeto é válido para esta entidade
@@ -794,6 +837,5 @@ class ${className}Client {
 
 export default ${className}Client;
 `;
-    }
-
+  },
 };
