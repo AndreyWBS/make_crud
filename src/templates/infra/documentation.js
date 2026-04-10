@@ -1,4 +1,4 @@
-const { camelCase } = require("../../utils/stringUtils");
+const { camelCase } = require('../../utils/stringUtils');
 
 module.exports = {
   indexDocumentation: (tables) => {
@@ -20,7 +20,7 @@ module.exports = {
                     </div>
                 </div>`;
       })
-      .join("");
+      .join('');
 
     return `
 <!DOCTYPE html>

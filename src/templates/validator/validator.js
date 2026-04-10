@@ -1,11 +1,11 @@
-const { pascalCase } = require("../../utils/stringUtils");
+const { pascalCase } = require('../../utils/stringUtils');
 
 module.exports = {
   validator: (tableName, schema) => {
     const className = pascalCase(tableName);
 
     const validationLogic = schema.columns
-      .filter((col) => col.extra !== "auto_increment")
+      .filter((col) => col.extra !== 'auto_increment')
       .map((col) => {
         const checks = [];
         const fieldAccess = `data[${JSON.stringify(col.name)}]`;
@@ -17,22 +17,22 @@ module.exports = {
         }
 
         if (
-          col.type.includes("int") ||
-          col.type.includes("decimal") ||
-          col.type.includes("float")
+          col.type.includes('int') ||
+          col.type.includes('decimal') ||
+          col.type.includes('float')
         ) {
           checks.push(
             `if (${fieldAccess} !== undefined && ${fieldAccess} !== null && typeof ${fieldAccess} !== 'number') errors.push('${col.name} must be a number');`,
           );
-        } else if (col.type.includes("varchar") || col.type.includes("text")) {
+        } else if (col.type.includes('varchar') || col.type.includes('text')) {
           checks.push(
             `if (${fieldAccess} !== undefined && ${fieldAccess} !== null && typeof ${fieldAccess} !== 'string') errors.push('${col.name} must be a string');`,
           );
         }
 
-        return checks.join("\n        ");
+        return checks.join('\n        ');
       })
-      .join("\n        ");
+      .join('\n        ');
 
     return `
   /**

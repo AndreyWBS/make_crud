@@ -1,6 +1,6 @@
-const { camelCase } = require("../../utils/stringUtils");
-const { buildComponentsSchemas } = require("./swagger/schemaMapper");
-const { buildPaths } = require("./swagger/pathBuilder");
+const { camelCase } = require('../../utils/stringUtils');
+const { buildComponentsSchemas } = require('./swagger/schemaMapper');
+const { buildPaths } = require('./swagger/pathBuilder');
 
 module.exports = {
   swaggerSpec: (tables, schema) => {
@@ -8,21 +8,19 @@ module.exports = {
     const paths = buildPaths(tables, schema);
 
     const swaggerSpec = {
-      openapi: "3.0.3",
+      openapi: '3.0.3',
       info: {
-        title: "Generated CRUD API",
-        version: "1.0.0",
-        description: "Documentacao gerada automaticamente pelo generator.",
+        title: 'Generated CRUD API',
+        version: '1.0.0',
+        description: 'Documentacao gerada automaticamente pelo generator.',
       },
-      servers: [
-        { url: "http://localhost:3000", description: "Servidor local" },
-      ],
+      servers: [{ url: 'http://localhost:3000', description: 'Servidor local' }],
       components: {
         securitySchemes: {
           bearerAuth: {
-            type: "http",
-            scheme: "bearer",
-            bearerFormat: "JWT",
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
           },
         },
         schemas: componentsSchemas,
@@ -59,7 +57,7 @@ module.exports = {
   const errorMiddleware = require('./middlewares/errorMiddleware');
   const requestContextMiddleware = require('./middlewares/requestContextMiddleware');
   const requestLoggerMiddleware = require('./middlewares/requestLoggerMiddleware');
-  ${tables.map((t) => `const ${camelCase(t)}Route = require('./routes/${camelCase(t)}Route');`).join("\n")}
+  ${tables.map((t) => `const ${camelCase(t)}Route = require('./routes/${camelCase(t)}Route');`).join('\n')}
 
   const app = express();
 
@@ -208,7 +206,7 @@ module.exports = {
 
   app.use('/docs', express.static(path.join(__dirname, 'docs/html')));
 
-  ${tables.map((t) => `app.use('/api/${t}', ${camelCase(t)}Route);`).join("\n")}
+  ${tables.map((t) => `app.use('/api/${t}', ${camelCase(t)}Route);`).join('\n')}
 
   // Tratamento centralizado de erros deve ser o último middleware.
   app.use(errorMiddleware);

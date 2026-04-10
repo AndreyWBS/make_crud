@@ -344,26 +344,26 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
   packageJson: () =>
     JSON.stringify(
       {
-        name: "generated-api",
-        version: "1.0.0",
-        main: "src/server.js",
+        name: 'generated-api',
+        version: '1.0.0',
+        main: 'src/server.js',
         scripts: {
-          start: "node src/server.js",
-          dev: "nodemon src/server.js",
+          start: 'node src/server.js',
+          dev: 'nodemon src/server.js',
         },
         dependencies: {
-          express: "^4.18.2",
-          cors: "^2.8.5",
-          helmet: "^8.0.0",
-          mysql2: "^3.6.1",
-          dotenv: "^16.3.1",
-          "express-rate-limit": "^7.4.1",
-          "express-slow-down": "^2.0.3",
-          jsonwebtoken: "^9.0.2",
-          "swagger-ui-express": "^5.0.1",
+          express: '^4.18.2',
+          cors: '^2.8.5',
+          helmet: '^8.0.0',
+          mysql2: '^3.6.1',
+          dotenv: '^16.3.1',
+          'express-rate-limit': '^7.4.1',
+          'express-slow-down': '^2.0.3',
+          jsonwebtoken: '^9.0.2',
+          'swagger-ui-express': '^5.0.1',
         },
         devDependencies: {
-          nodemon: "^3.1.4",
+          nodemon: '^3.1.4',
         },
       },
       null,
@@ -725,10 +725,10 @@ NODE_ENV=development
 
 
 
-DB_HOST=${process.env.DB_HOST || "localhost"}
-DB_USER=${process.env.DB_USER || "root"}
-DB_PASSWORD=${process.env.DB_PASSWORD || ""}
-DB_NAME=${process.env.DB_NAME || "my_database"}
+DB_HOST=${process.env.DB_HOST || 'localhost'}
+DB_USER=${process.env.DB_USER || 'root'}
+DB_PASSWORD=${process.env.DB_PASSWORD || ''}
+DB_NAME=${process.env.DB_NAME || 'my_database'}
 DB_PORT=${process.env.DB_PORT || 3306}
 
 # Disable auth for all routes (non-production only; blocked in production)

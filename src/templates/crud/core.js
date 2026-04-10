@@ -1,14 +1,13 @@
-const { pascalCase, camelCase } = require("../../utils/stringUtils");
+const { pascalCase, camelCase } = require('../../utils/stringUtils');
 
 module.exports = {
   model: (tableName, schema) => {
     const className = pascalCase(tableName);
     const fields = schema.columns
       .map(
-        (col) =>
-          `        this[${JSON.stringify(col.name)}] = data[${JSON.stringify(col.name)}];`,
+        (col) => `        this[${JSON.stringify(col.name)}] = data[${JSON.stringify(col.name)}];`,
       )
-      .join("\n");
+      .join('\n');
 
     return `
 /**
@@ -35,24 +34,22 @@ module.exports = ${className};
 
   repository: (tableName, schema) => {
     const className = pascalCase(tableName);
-    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
     const allColumns = schema.columns.map((col) => col.name);
     const allColumnsLiteral = JSON.stringify(allColumns);
-    const columnListSql = allColumns.map((col) => `\`${col}\``).join(", ");
+    const columnListSql = allColumns.map((col) => `\`${col}\``).join(', ');
     const filterableColumns = JSON.stringify(allColumns);
     const insertableColumns = JSON.stringify(
-      schema.columns
-        .filter((col) => col.extra !== "auto_increment")
-        .map((col) => col.name),
+      schema.columns.filter((col) => col.extra !== 'auto_increment').map((col) => col.name),
     );
     const updatableColumns = JSON.stringify(
       schema.columns
-        .filter((col) => col.name !== pk && col.extra !== "auto_increment")
+        .filter((col) => col.name !== pk && col.extra !== 'auto_increment')
         .map((col) => col.name),
     );
     const columnUnionType = schema.columns.length
-      ? schema.columns.map((col) => `'${col.name}'`).join(" | ")
-      : "string";
+      ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
+      : 'string';
 
     return `
 /**
@@ -284,10 +281,8 @@ module.exports = new ${className}Repository();
   service: (tableName, schema) => {
     const className = pascalCase(tableName);
     const repoName = `${camelCase(tableName)}Repository`;
-    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
-    const columnsLiteral = JSON.stringify(
-      schema.columns.map((col) => col.name),
-    );
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
+    const columnsLiteral = JSON.stringify(schema.columns.map((col) => col.name));
     const stringColumnsLiteral = JSON.stringify(
       schema.columns
         .filter((col) =>
@@ -298,8 +293,8 @@ module.exports = new ${className}Repository();
         .map((col) => col.name),
     );
     const columnUnionType = schema.columns.length
-      ? schema.columns.map((col) => `'${col.name}'`).join(" | ")
-      : "string";
+      ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
+      : 'string';
 
     return `
 /**
@@ -477,11 +472,11 @@ module.exports = new ${className}Service();
     const className = pascalCase(tableName);
     const serviceName = `${camelCase(tableName)}Service`;
     const columnUnionType = schema.columns.length
-      ? schema.columns.map((col) => `'${col.name}'`).join(" | ")
-      : "string";
+      ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
+      : 'string';
     const searchableColumnsDoc = schema.columns
       .map((col) => `     * - \`${col.name}\`: ${col.type}`)
-      .join("\n");
+      .join('\n');
 
     return `
 /**
@@ -677,7 +672,7 @@ module.exports = new ${className}Controller();
   routes: (tableName, schema) => {
     const controllerName = `${camelCase(tableName)}Controller`;
     const validatorName = `${camelCase(tableName)}Validator`;
-    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
 
     return `
 /**
