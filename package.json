@@ -4,7 +4,8 @@
   "description": "CLI tool to generate CRUD APIs from MySQL databases with migrations, documentation, and testing",
   "main": "main.js",
   "bin": {
-    "gerador-crud": "./bin/gerador.js"
+    "gerador-crud": "./bin/gerador.js",
+    "gcrud": "./bin/gerador.js"
   },
   "files": [
     "bin/",

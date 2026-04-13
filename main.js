@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const { execSync } = require('child_process');
 const dotenv = require('dotenv');
+const readline = require('readline');
 
 const Introspector = require('./src/core/Introspector');
 const GeneratorEngine = require('./src/core/GeneratorEngine');
@@ -39,6 +40,11 @@ function getArgValue(args, longFlag, shortFlag) {
   return null;
 }
 
+function hasFlag(args, longFlag, shortFlag = null) {
+  if (!Array.isArray(args)) return false;
+  return args.includes(longFlag) || (shortFlag ? args.includes(shortFlag) : false);
+}
+
 function resolveLanguage(value, fallback = 'pt') {
   const normalized = String(value || '')
     .trim()
@@ -67,6 +73,8 @@ function resolveOptions(options = {}) {
   const dbConfigPathArg = getArgValue(cliArgs, '--db-config', '-b');
   const envPathArg = getArgValue(cliArgs, '--env', '-e');
   const languageArg = getArgValue(cliArgs, '--lang', '-l');
+  const useDefaultConfig = hasFlag(cliArgs, '--default-config', '-dc');
+  const showHelp = hasFlag(cliArgs, '--help', '-h');
 
   const inputDir = path.resolve(options.inputDir || inputDirArg || process.cwd());
   const outputDir = path.resolve(options.outputDir || outputDirArg || path.join(inputDir, 'dist'));
@@ -88,7 +96,37 @@ function resolveOptions(options = {}) {
     dbConfigPath,
     envPath,
     language,
+    useDefaultConfig,
+    showHelp,
   };
+}
+
+function printHelp() {
+  console.log(`gerador-crud - Gerador de API CRUD
+
+Atalho de comando:
+  gcrud
+
+Uso:
+  gerador-crud [opcoes]
+
+Opcoes:
+  --help, -h                 Mostra esta ajuda
+  --init                     Introspecta bancos e cria/atualiza arquivos de configuracao
+  --default-config, -dc      Usa api.config.json padrao e segue direto para geracao
+  --input, -i <dir>          Diretorio de entrada
+  --dir, -d <dir>            Alias legado para --input
+  --output, -o <dir>         Diretorio de saida
+  --db-config, -b <arquivo>  Caminho do db.config.json
+  --config, -c <arquivo>     Caminho do api.config.json
+  --env, -e <arquivo>        Caminho do arquivo .env
+  --lang, -l <pt|en>         Idioma das mensagens da API gerada
+
+Exemplos:
+  gerador-crud --init
+  gerador-crud --input ./entrada --default-config
+  gerador-crud --input ./entrada --output ./saida --lang pt
+`);
 }
 
 function ensureDatabaseName(dbConfig, dbConfigPath) {
@@ -127,6 +165,86 @@ function mergeDatabaseConfigBundle(existingConfig, envConfig, preferEnvCredentia
       : existingConfig?.defaultDatabase || envConfig?.defaultDatabase || 'default',
     databases,
   };
+}
+
+function firstDatabaseEntry(bundle = {}) {
+  const entries = Object.entries(bundle?.databases || {});
+  if (entries.length === 0) {
+    return { databaseKey: 'default', config: {} };
+  }
+
+  const [databaseKey, config] = entries[0];
+  return { databaseKey, config: config || {} };
+}
+
+function hasDatabaseName(bundle = {}) {
+  return Object.values(bundle?.databases || {}).some(
+    (db) => typeof db?.database === 'string' && db.database.trim().length > 0,
+  );
+}
+
+function isInteractiveTerminal() {
+  return Boolean(process.stdin.isTTY && process.stdout.isTTY);
+}
+
+function buildPromptQuestion(label, fallback = '') {
+  const fallbackText = String(fallback || '').trim();
+  return fallbackText ? `${label} [${fallbackText}]: ` : `${label}: `;
+}
+
+async function askQuestion(rl, label, fallback = '') {
+  const answer = await new Promise((resolve) => {
+    rl.question(buildPromptQuestion(label, fallback), resolve);
+  });
+
+  const trimmed = String(answer || '').trim();
+  if (trimmed) return trimmed;
+  return String(fallback || '').trim();
+}
+
+async function promptDatabaseConfig(envDatabaseConfig = {}) {
+  const { databaseKey: envDatabaseKey, config: envEntry } = firstDatabaseEntry(envDatabaseConfig);
+
+  const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  try {
+    console.log('\nNenhum db.config.json encontrado. Informe as credenciais do banco:');
+    const host = await askQuestion(rl, 'Host', envEntry.host || 'localhost');
+    const user = await askQuestion(rl, 'Usuario', envEntry.user || 'root');
+    const password = await askQuestion(rl, 'Senha', envEntry.password || '');
+
+    let database = await askQuestion(rl, 'Nome do banco', envEntry.database || '');
+    while (!database) {
+      console.log('Nome do banco e obrigatorio.');
+      database = await askQuestion(rl, 'Nome do banco', envEntry.database || '');
+    }
+
+    const portInput = await askQuestion(rl, 'Porta', envEntry.port || '3306');
+    const parsedPort = Number(portInput);
+    const port = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3306;
+
+    const aliasFallback = envDatabaseKey || database || 'default';
+    const alias = await askQuestion(rl, 'Alias da conexao (chave)', aliasFallback);
+    const databaseKey = alias || aliasFallback;
+
+    return {
+      defaultDatabase: databaseKey,
+      databases: {
+        [databaseKey]: {
+          host,
+          user,
+          password,
+          database,
+          port,
+        },
+      },
+    };
+  } finally {
+    rl.close();
+  }
 }
 
 async function introspectSchemas(databases, dbConfigPath) {
@@ -583,8 +701,22 @@ function addOptionalGenerators(
 }
 
 async function generate(options = {}) {
-  const { cliArgs, inputDir, outputDir, configPath, dbConfigPath, envPath, language } =
-    resolveOptions(options);
+  const {
+    cliArgs,
+    inputDir,
+    outputDir,
+    configPath,
+    dbConfigPath,
+    envPath,
+    language,
+    useDefaultConfig,
+    showHelp,
+  } = resolveOptions(options);
+
+  if (showHelp) {
+    printHelp();
+    return;
+  }
 
   dotenv.config({ path: envPath });
 
@@ -593,15 +725,36 @@ async function generate(options = {}) {
 
   const configBuilder = new ConfigBuilder(configPath);
   const existingConfig = await configBuilder.load();
-  const preferEnvCredentials =
-    existingConfig?.global?.databaseConfig?.preferEnvCredentials !== false;
+  const preferEnvCredentials = useDefaultConfig
+    ? true
+    : existingConfig?.global?.databaseConfig?.preferEnvCredentials !== false;
 
   const databaseConfigBuilder = new DatabaseConfigBuilder(dbConfigPath);
   const existingDatabaseConfig = await databaseConfigBuilder.load();
   const envDatabaseConfig = databaseConfigBuilder.buildFromEnv();
-  const dbConfigBundle = databaseConfigBuilder.normalize(
-    mergeDatabaseConfigBundle(existingDatabaseConfig, envDatabaseConfig, preferEnvCredentials),
+
+  let databaseConfigSource = mergeDatabaseConfigBundle(
+    existingDatabaseConfig,
+    envDatabaseConfig,
+    preferEnvCredentials,
   );
+
+  if (!existingDatabaseConfig) {
+    if (isInteractiveTerminal()) {
+      const promptedDatabaseConfig = await promptDatabaseConfig(envDatabaseConfig);
+      databaseConfigSource = mergeDatabaseConfigBundle(
+        databaseConfigSource,
+        promptedDatabaseConfig,
+        true,
+      );
+    } else if (!hasDatabaseName(databaseConfigSource)) {
+      throw new Error(
+        `Database config not found at ${dbConfigPath}. Configure DB_* variables or run in interactive mode to informar as credenciais.`,
+      );
+    }
+  }
+
+  const dbConfigBundle = databaseConfigBuilder.normalize(databaseConfigSource);
 
   if (!existingDatabaseConfig) {
     await databaseConfigBuilder.save(dbConfigBundle);
@@ -611,7 +764,9 @@ async function generate(options = {}) {
     ? 'already exists (skipping file update)'
     : 'created';
 
-  if (isInit || !existingConfig) {
+  let config = existingConfig;
+
+  if (isInit || !existingConfig || useDefaultConfig) {
     console.log(`Entrada: ${inputDir}`);
     console.log(`Banco: ${dbConfigPath}`);
     console.log(`Config: ${configPath}`);
@@ -624,30 +779,41 @@ async function generate(options = {}) {
     console.log('Introspecting database to build api.config.json...');
 
     const schemasByDatabase = await introspectSchemas(dbConfigBundle.databases, dbConfigPath);
-    const config = existingConfig
-      ? configBuilder.mergeSchemas(
-          existingConfig,
-          schemasByDatabase,
-          dbConfigBundle.defaultDatabase,
-        )
-      : configBuilder.buildDefaultFromSchemas(schemasByDatabase, dbConfigBundle.defaultDatabase);
+    config = useDefaultConfig
+      ? configBuilder.buildDefaultFromSchemas(schemasByDatabase, dbConfigBundle.defaultDatabase)
+      : existingConfig
+        ? configBuilder.mergeSchemas(
+            existingConfig,
+            schemasByDatabase,
+            dbConfigBundle.defaultDatabase,
+          )
+        : configBuilder.buildDefaultFromSchemas(schemasByDatabase, dbConfigBundle.defaultDatabase);
 
     config.global = config.global || {};
     config.global.language = resolveLanguage(language || config.global.language || 'en');
 
     await configBuilder.save(config);
 
-    if (!existingConfig) {
-      console.log(`Config created: ${configPath}`);
-      console.log('Review api.config.json then run again to generate the API.');
+    if (useDefaultConfig) {
+      console.log(`Config padrao criado/atualizado: ${configPath}`);
+      console.log('Prosseguindo com a geracao usando configuracoes padrao.');
     } else {
-      console.log(`Config updated: ${configPath}`);
-      console.log('New tables merged. Review and run again if needed.');
+      if (!existingConfig) {
+        console.log(`Config created: ${configPath}`);
+        console.log('Review api.config.json then run again to generate the API.');
+      } else {
+        console.log(`Config updated: ${configPath}`);
+        console.log('New tables merged. Review and run again if needed.');
+      }
+
+      return;
     }
-    return;
   }
 
-  const config = existingConfig;
+  if (!config) {
+    throw new Error('api.config.json could not be resolved.');
+  }
+
   const globalConfig = config.global || {};
   const selectedLanguage = resolveLanguage(language || globalConfig.language || 'pt');
   const includeSeedByEnv = parseBoolean(process.env.MIGRATIONS_INCLUDE_SOURCE_DATA, false);

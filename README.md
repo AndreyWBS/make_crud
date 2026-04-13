@@ -8,13 +8,18 @@ Gerador CLI para criar APIs CRUD em Node.js a partir de bancos MySQL, com arquit
 npm install -g gerador-crud
 ```
 
+Comando principal: `gerador-crud`
+Atalho: `gcrud`
+
 ## Fluxo basico
 
 1. Crie uma pasta para guardar os arquivos de entrada do gerador.
-2. Adicione um arquivo `.env` nessa pasta com as credenciais do banco.
+2. Opcional: adicione um arquivo `.env` nessa pasta com as credenciais do banco.
 3. Rode `gerador-crud --init` para criar ou atualizar primeiro o `db.config.json` e depois o `api.config.json`.
 4. Ajuste o `db.config.json` e o `api.config.json`.
 5. Rode `gerador-crud` para gerar o projeto.
+
+Se `db.config.json` nao existir, a CLI pergunta host, usuario, senha, banco e porta no terminal e cria o arquivo automaticamente.
 
 Por padrao:
 
@@ -28,11 +33,14 @@ Por padrao:
 
 ```bash
 gerador-crud --init
+gcrud --init
 gerador-crud --input ./meu-projeto
 gerador-crud --input ./entrada --output ./saida
 gerador-crud --input ./entrada --db-config ./configs/db.config.json
 gerador-crud --input ./entrada --config ./configs/api.config.json --env ./configs/.env
 gerador-crud --input ./entrada --lang pt
+gerador-crud --help
+gerador-crud --input ./entrada --default-config
 ```
 
 Flags suportadas:
@@ -44,7 +52,11 @@ Flags suportadas:
 - `--env`, `-e`: caminho do arquivo `.env`
 - `--lang`, `-l`: idioma das mensagens de erro da API gerada (`en` ou `pt`)
 - `--dir`, `-d`: alias legado para `--input`
+- `--help`, `-h`: mostra ajuda da CLI
 - `--init`: introspecta os bancos e cria ou atualiza os arquivos de configuracao
+- `--default-config`, `-dc`: ignora ajustes manuais e usa `api.config.json` com configuracoes padrao
+
+Com `--default-config`, a CLI introspecta os bancos, cria/atualiza o `api.config.json` com defaults (tabelas e rotas habilitadas) e segue direto para a geracao da API no mesmo comando.
 
 ## Ordem de criacao dos arquivos
 
