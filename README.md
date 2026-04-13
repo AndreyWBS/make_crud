@@ -19,7 +19,7 @@ Atalho: `gcrud`
 4. Ajuste o `db.config.json` e o `api.config.json`.
 5. Rode `gerador-crud` para gerar o projeto.
 
-Se `db.config.json` nao existir, a CLI pergunta host, usuario, senha, banco e porta no terminal e cria o arquivo automaticamente.
+Se `db.config.json` nao existir, a CLI pergunta diretorio de saida, host, usuario, senha, banco e porta no terminal e cria o arquivo automaticamente.
 
 Por padrao:
 

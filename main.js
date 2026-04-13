@@ -202,7 +202,7 @@ async function askQuestion(rl, label, fallback = '') {
   return String(fallback || '').trim();
 }
 
-async function promptDatabaseConfig(envDatabaseConfig = {}) {
+async function promptDatabaseConfig(envDatabaseConfig = {}, currentOutputDir = '') {
   const { databaseKey: envDatabaseKey, config: envEntry } = firstDatabaseEntry(envDatabaseConfig);
 
   const rl = readline.createInterface({
@@ -212,6 +212,7 @@ async function promptDatabaseConfig(envDatabaseConfig = {}) {
 
   try {
     console.log('\nNenhum db.config.json encontrado. Informe as credenciais do banco:');
+    const outputDir = await askQuestion(rl, 'Diretorio de saida', currentOutputDir);
     const host = await askQuestion(rl, 'Host', envEntry.host || 'localhost');
     const user = await askQuestion(rl, 'Usuario', envEntry.user || 'root');
     const password = await askQuestion(rl, 'Senha', envEntry.password || '');
@@ -231,6 +232,7 @@ async function promptDatabaseConfig(envDatabaseConfig = {}) {
     const databaseKey = alias || aliasFallback;
 
     return {
+      outputDir,
       defaultDatabase: databaseKey,
       databases: {
         [databaseKey]: {
@@ -722,6 +724,7 @@ async function generate(options = {}) {
 
   const isInit = cliArgs.includes('--init');
   const shouldAutoInstallAndFormat = parseBoolean(process.env.AUTO_INSTALL_AND_FORMAT, true);
+  let effectiveOutputDir = outputDir;
 
   const configBuilder = new ConfigBuilder(configPath);
   const existingConfig = await configBuilder.load();
@@ -741,7 +744,10 @@ async function generate(options = {}) {
 
   if (!existingDatabaseConfig) {
     if (isInteractiveTerminal()) {
-      const promptedDatabaseConfig = await promptDatabaseConfig(envDatabaseConfig);
+      const promptedDatabaseConfig = await promptDatabaseConfig(envDatabaseConfig, outputDir);
+      if (promptedDatabaseConfig.outputDir) {
+        effectiveOutputDir = path.resolve(promptedDatabaseConfig.outputDir);
+      }
       databaseConfigSource = mergeDatabaseConfigBundle(
         databaseConfigSource,
         promptedDatabaseConfig,
@@ -833,7 +839,7 @@ async function generate(options = {}) {
   const useSingleApi = !separateApis && enabledDatabaseEntries.length > 1;
 
   console.log(`Entrada: ${inputDir}`);
-  console.log(`Saida: ${outputDir}`);
+  console.log(`Saida: ${effectiveOutputDir}`);
   console.log(`Banco: ${dbConfigPath}`);
   console.log(`Config: ${configPath}`);
   console.log(`Idioma: ${selectedLanguage}`);
@@ -842,14 +848,14 @@ async function generate(options = {}) {
     `Modo: ${useSingleApi ? 'API única (múltiplos bancos combinados)' : separateApis ? 'APIs separadas por banco' : 'API única'}`,
   );
 
-  await fs.emptyDir(outputDir);
+  await fs.emptyDir(effectiveOutputDir);
 
   if (useSingleApi) {
     await generateSingleApi({
       enabledDatabaseEntries,
       dbConfigBundle,
       dbConfigPath,
-      outputDir,
+      outputDir: effectiveOutputDir,
       globalConfig,
       shouldIncludeSourceData,
       shouldAutoInstallAndFormat,
@@ -860,7 +866,7 @@ async function generate(options = {}) {
       enabledDatabaseEntries,
       dbConfigBundle,
       dbConfigPath,
-      outputDir,
+      outputDir: effectiveOutputDir,
       globalConfig,
       shouldIncludeSourceData,
       shouldAutoInstallAndFormat,
@@ -949,7 +955,7 @@ async function generateSingleApi({
   }
 
   console.log('Installing dependencies...');
-  execSync('npm install', { cwd: outputDir, stdio: 'inherit', shell: true });
+  execSync('npm install --loglevel=error', { cwd: outputDir, stdio: 'inherit', shell: true });
 
   if (globalConfig.prettier !== false) {
     console.log('Formatting generated API...');
@@ -1029,7 +1035,7 @@ async function generateSeparateApis({
     }
 
     console.log(`Installing dependencies for '${databaseKey}'...`);
-    execSync('npm install', {
+    execSync('npm install --loglevel=error', {
       cwd: databaseOutputDir,
       stdio: 'inherit',
       shell: true,

@@ -30,7 +30,7 @@ const DEFAULT_GLOBAL = {
   },
   migrations: {
     enabled: true,
-    includeSourceData: false,
+    includeSourceData: true,
   },
 };
 

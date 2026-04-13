@@ -825,7 +825,7 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
           'swagger-ui-express': '^5.0.1',
         },
         devDependencies: {
-          jest: '^29.7.0',
+          jest: '^30.0.0',
           nodemon: '^3.1.4',
           prettier: '^3.6.2',
           supertest: '^7.1.4',
