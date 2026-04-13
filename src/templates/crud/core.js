@@ -444,6 +444,23 @@ class ${className}Repository {
     }
 
     /**
+     * Lista registros retornando apenas as colunas selecionadas.
+     * @param {string[]} columns Colunas permitidas para projeção.
+     * @returns {Promise<any[]>}
+     */
+    async findSelectedColumns(columns) {
+        const safeColumns = (columns || []).filter((column) => COLUMN_SQL_MAP[column]);
+        if (safeColumns.length === 0) {
+            return [];
+        }
+
+        const selectSql = safeColumns.map((column) => COLUMN_SQL_MAP[column]).join(', ');
+        const query = 'SELECT ' + selectSql + ' FROM ${tableName}';
+        const [rows] = await runQuery(query, [], '${tableName}.findSelectedColumns');
+        return rows;
+    }
+
+    /**
      * Cria um novo registro.
      * @param {Record<string, any>} data Payload de criação.
      * @returns {Promise<Record<string, any>>}
@@ -503,6 +520,56 @@ class ${className}Repository {
     async delete(id) {
         await runQuery('DELETE FROM ${tableName} WHERE ${pk} = ?', [id], '${tableName}.delete');
         return { success: true };
+    }
+
+    /**
+     * Atualiza múltiplos registros em transação.
+     * @param {Array<Record<string, any>>} dataArray Lista de itens contendo pk e campos.
+     * @returns {Promise<{affectedRows:number}>}
+     */
+    async updateBulk(dataArray) {
+        if (!Array.isArray(dataArray) || dataArray.length === 0) return { affectedRows: 0 };
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            let totalAffected = 0;
+            for (const item of dataArray) {
+                const id = item[${JSON.stringify(pk)}];
+                const safeData = filterByAllowedColumns(item, UPDATABLE_COLUMNS);
+                if (id === undefined || id === null || Object.keys(safeData).length === 0) continue;
+                const [result] = await connection.query({ sql: 'UPDATE ${tableName} SET ? WHERE ${pk} = ?', timeout: QUERY_TIMEOUT_MS }, [safeData, id]);
+                totalAffected += result.affectedRows;
+            }
+            await connection.commit();
+            return { affectedRows: totalAffected };
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
+    }
+
+    /**
+     * Remove múltiplos registros por array de ids em transação.
+     * @param {Array<string|number>} ids Lista de chaves primárias.
+     * @returns {Promise<{affectedRows:number}>}
+     */
+    async deleteBulk(ids) {
+        if (!Array.isArray(ids) || ids.length === 0) return { affectedRows: 0 };
+        const placeholders = ids.map(() => '?').join(', ');
+        const connection = await pool.getConnection();
+        try {
+            await connection.beginTransaction();
+            const [result] = await connection.query({ sql: 'DELETE FROM ${tableName} WHERE ${pk} IN (' + placeholders + ')', timeout: QUERY_TIMEOUT_MS }, ids);
+            await connection.commit();
+            return { affectedRows: result.affectedRows };
+        } catch (error) {
+            await connection.rollback();
+            throw error;
+        } finally {
+            connection.release();
+        }
     }
 }
 
@@ -676,6 +743,65 @@ class ${className}Service {
     }
 
     /**
+     * Atualiza múltiplos registros em lote.
+     * @param {Array<Record<string, any>>} dataArray Lista de itens com pk e campos.
+     * @returns {Promise<{affectedRows:number}>}
+     */
+    async updateBulk(dataArray) {
+        if (!Array.isArray(dataArray) || dataArray.length === 0) {
+            throw new AppError(400, 'Body must be a non-empty array for bulk update');
+        }
+        for (let i = 0; i < dataArray.length; i++) {
+            const item = dataArray[i];
+            if (!item || typeof item !== 'object' || Array.isArray(item)) {
+                throw new AppError(400, 'Each bulk item must be an object');
+            }
+            if (item[${JSON.stringify(pk)}] === undefined || item[${JSON.stringify(pk)}] === null) {
+                throw new AppError(400, '${pk} is required in each item for bulk update');
+            }
+        }
+        return await ${repoName}.updateBulk(dataArray);
+    }
+
+    /**
+     * Remove múltiplos registros por lista de ids.
+     * @param {Array<string|number>} ids Lista de chaves primárias.
+     * @returns {Promise<{affectedRows:number}>}
+     */
+    async deleteBulk(ids) {
+        if (!Array.isArray(ids) || ids.length === 0) {
+            throw new AppError(400, 'Body must be a non-empty array of ids for bulk delete');
+        }
+        return await ${repoName}.deleteBulk(ids);
+    }
+
+    /**
+     * Busca lista com projeção fixa de colunas configuradas.
+     * @param {string[]} columns Colunas selecionadas para retorno.
+     * @returns {Promise<any[]>}
+     */
+    async getSelectedColumns(columns) {
+        if (!Array.isArray(columns) || columns.length === 0) {
+            throw new AppError(400, 'Columns config must be a non-empty array');
+        }
+
+        const normalizedColumns = columns
+            .filter((column) => typeof column === 'string' && column.trim())
+            .map((column) => column.trim());
+
+        if (normalizedColumns.length === 0) {
+            throw new AppError(400, 'Columns config must be a non-empty array');
+        }
+
+        const invalidColumns = normalizedColumns.filter((column) => !ALLOWED_COLUMNS.has(column));
+        if (invalidColumns.length > 0) {
+            throw new AppError(400, 'Invalid selected columns: ' + invalidColumns.join(', '));
+        }
+
+        return await ${repoName}.findSelectedColumns(normalizedColumns);
+    }
+
+    /**
      * Busca por coluna dinâmica com paginação.
         * @param {${columnUnionType}} columnName Nome da coluna.
      * @param {string|number} value Valor de busca.
@@ -713,7 +839,7 @@ module.exports = new ${className}Service();
 `;
   },
 
-  controller: (tableName, schema) => {
+  controller: (tableName, schema, fullSchema = null, tableConfig = null) => {
     const className = pascalCase(tableName);
     const serviceName = `${camelCase(tableName)}Service`;
     const columnUnionType = schema.columns.length
@@ -721,6 +847,53 @@ module.exports = new ${className}Service();
       : 'string';
     const searchableColumnsDoc = schema.columns
       .map((col) => `     * - \`${col.name}\`: ${col.type}`)
+      .join('\n');
+    const customRoutes = Array.isArray(tableConfig?.customRoutes) ? tableConfig.customRoutes : [];
+    const normalizedCustomRoutes = customRoutes
+      .map((route, index) => {
+        if (!route || String(route.method || 'get').toLowerCase() !== 'get') return null;
+
+        const columns = Array.isArray(route.columns)
+          ? route.columns.filter((column) => typeof column === 'string' && column.trim())
+          : [];
+        if (columns.length === 0) return null;
+
+        const rawPath = typeof route.path === 'string' ? route.path.trim() : '';
+        const path = rawPath
+          ? rawPath.startsWith('/')
+            ? rawPath
+            : `/${rawPath}`
+          : `/custom-${index + 1}`;
+        const methodSeed = route.name || route.path || `custom_${index + 1}`;
+        const methodName = `get${pascalCase(methodSeed)}Projection`;
+
+        return {
+          methodName,
+          path,
+          columns,
+        };
+      })
+      .filter(Boolean);
+    const customControllerMethods = normalizedCustomRoutes
+      .map(
+        (route) => `
+        /**
+         * GET ${route.path}
+         * Retorna projeção de colunas configurada no api.config.json.
+         * @param {import('express').Request} req
+         * @param {import('express').Response} res
+         * @param {import('express').NextFunction} next
+         * @returns {Promise<void>}
+         */
+        async ${route.methodName}(req, res, next) {
+                try {
+                        const data = await ${serviceName}.getSelectedColumns(${JSON.stringify(route.columns)});
+                        res.json(data);
+                } catch (error) {
+                        next(error);
+                }
+        }`,
+      )
       .join('\n');
 
     return `
@@ -878,6 +1051,38 @@ class ${className}Controller {
     }
 
     /**
+     * PUT /bulk
+     * @param {import('express').Request} req
+     * @param {import('express').Response} res
+     * @param {import('express').NextFunction} next
+     * @returns {Promise<void>}
+     */
+    async updateBulk(req, res, next) {
+        try {
+            const result = await ${serviceName}.updateBulk(req.body);
+            res.json(result);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
+     * DELETE /bulk
+     * @param {import('express').Request} req
+     * @param {import('express').Response} res
+     * @param {import('express').NextFunction} next
+     * @returns {Promise<void>}
+     */
+    async deleteBulk(req, res, next) {
+        try {
+            await ${serviceName}.deleteBulk(req.body);
+            res.status(204).end();
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * GET /search/:column/:value
         *
         * Colunas suportadas para pesquisa nesta entidade:
@@ -925,16 +1130,68 @@ class ${className}Controller {
             next(error);
         }
     }
+${customControllerMethods}
 }
 
 module.exports = new ${className}Controller();
 `;
   },
 
-  routes: (tableName, schema) => {
+  routes: (tableName, schema, fullSchema = null, tableConfig = null) => {
     const controllerName = `${camelCase(tableName)}Controller`;
     const validatorName = `${camelCase(tableName)}Validator`;
-    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
+    const routeConfig = tableConfig?.routes || null;
+    const on = (key) => !routeConfig || routeConfig[key] !== false;
+    const customRoutes = Array.isArray(tableConfig?.customRoutes) ? tableConfig.customRoutes : [];
+    const normalizedCustomRoutes = customRoutes
+      .map((route, index) => {
+        if (!route || String(route.method || 'get').toLowerCase() !== 'get') return null;
+        const columns = Array.isArray(route.columns)
+          ? route.columns.filter((column) => typeof column === 'string' && column.trim())
+          : [];
+        if (columns.length === 0) return null;
+
+        const rawPath = typeof route.path === 'string' ? route.path.trim() : '';
+        const path = rawPath
+          ? rawPath.startsWith('/')
+            ? rawPath
+            : `/${rawPath}`
+          : `/custom-${index + 1}`;
+        const methodSeed = route.name || route.path || `custom_${index + 1}`;
+        const methodName = `get${pascalCase(methodSeed)}Projection`;
+
+        return { path, methodName };
+      })
+      .filter(Boolean);
+    const customRouteLines = normalizedCustomRoutes
+      .map(
+        (route) =>
+          `router.get('${route.path}', authMiddleware, canRead, ${controllerName}.${route.methodName});`,
+      )
+      .join('\n');
+
+    const routeLines = [
+      on('getAll') && `router.get('/', authMiddleware, canRead, ${controllerName}.getAll);`,
+      on('search') &&
+        `router.get('/search/:column/:value', authMiddleware, canRead, ${controllerName}.findByColumn);`,
+      on('getByIdWithRelations') &&
+        `router.get('/:id/relations', authMiddleware, canRead, ${controllerName}.getByIdWithRelations);`,
+      on('getById') && `router.get('/:id', authMiddleware, canRead, ${controllerName}.getById);`,
+      '',
+      on('create') &&
+        `router.post('/', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.create);`,
+      on('createBulk') &&
+        `router.post('/bulk', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validateBulk(req, res, next), ${controllerName}.createBulk);`,
+      on('updateBulk') &&
+        `router.put('/bulk', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validateBulkUpdate(req, res, next), ${controllerName}.updateBulk);`,
+      on('update') &&
+        `router.put('/:id', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.update);`,
+      on('deleteBulk') &&
+        `router.delete('/bulk', authMiddleware, canDelete, ${controllerName}.deleteBulk);`,
+      on('delete') && `router.delete('/:id', authMiddleware, canDelete, ${controllerName}.delete);`,
+    ]
+      .filter(Boolean)
+      .join('\n');
 
     return `
 /**
@@ -955,27 +1212,20 @@ const ${validatorName} = require('../middlewares/validators/${validatorName}');
  */
 const RESOURCE = '${tableName}';
 const canRead = authorize({
-    anyRole: ['admin', 'operator', 'read_only'],
-    anyScope: [RESOURCE + ':read'],
+        anyRole: ['admin', 'operator', 'read_only'],
+        anyScope: [RESOURCE + ':read'],
 });
 const canWrite = authorize({
-    anyRole: ['admin', 'operator'],
-    anyScope: [RESOURCE + ':write'],
+        anyRole: ['admin', 'operator'],
+        anyScope: [RESOURCE + ':write'],
 });
 const canDelete = authorize({
-    anyRole: ['admin'],
-    anyScope: [RESOURCE + ':delete'],
+        anyRole: ['admin'],
+        anyScope: [RESOURCE + ':delete'],
 });
 
-router.get('/', authMiddleware, canRead, ${controllerName}.getAll);
-router.get('/search/:column/:value', authMiddleware, canRead, ${controllerName}.findByColumn);
-router.get('/:id/relations', authMiddleware, canRead, ${controllerName}.getByIdWithRelations);
-router.get('/:id', authMiddleware, canRead, ${controllerName}.getById);
-
-router.post('/', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.create);
-router.post('/bulk', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validateBulk(req, res, next), ${controllerName}.createBulk);
-router.put('/:id', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.update);
-router.delete('/:id', authMiddleware, canDelete, ${controllerName}.delete);
+${routeLines}
+${customRouteLines ? `\n${customRouteLines}` : ''}
 
 module.exports = router;
 `;

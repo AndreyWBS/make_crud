@@ -152,11 +152,14 @@ Este diretório entrega uma base de testes para acelerar a validação das APIs 
   resourceCrudIntegration: (tableName, schema) => {
     const resourceName = tableName;
     const serviceName = `${camelCase(tableName)}Service`;
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
     const validPayload = buildValidPayload(schema);
     const validPayloadLiteral = JSON.stringify(validPayload, null, 2)
       .split('\n')
       .map((line) => `  ${line}`)
       .join('\n');
+    const bulkUpdatePayload = JSON.stringify([{ [pk]: 1, ...validPayload }]);
+    const bulkUpdatePayloadLiteral = bulkUpdatePayload;
 
     return `const request = require('supertest');
 const AppError = require('../../utils/AppError');
@@ -169,7 +172,9 @@ jest.mock('../../services/${serviceName}', () => ({
   create: jest.fn(),
   createBulk: jest.fn(),
   update: jest.fn(),
+  updateBulk: jest.fn(),
   delete: jest.fn(),
+  deleteBulk: jest.fn(),
   findByColumnPaginated: jest.fn(),
 }));
 
@@ -200,7 +205,9 @@ describe('API /api/${resourceName} - cobertura base de integracao', () => {
     ${serviceName}.getById.mockResolvedValue({ id: 1 });
     ${serviceName}.create.mockResolvedValue({ id: 1 });
     ${serviceName}.update.mockResolvedValue({ id: 1 });
+    ${serviceName}.updateBulk.mockResolvedValue({ affectedRows: 1 });
     ${serviceName}.delete.mockResolvedValue({ success: true });
+    ${serviceName}.deleteBulk.mockResolvedValue({ affectedRows: 1 });
   });
 
   test('GET lista sem token retorna 401', async () => {
@@ -284,6 +291,46 @@ describe('API /api/${resourceName} - cobertura base de integracao', () => {
 
     expect(response.status).toBe(204);
     expect(${serviceName}.delete).toHaveBeenCalledWith('1');
+  });
+
+  test('PUT /bulk sem token retorna 401', async () => {
+    const response = await request(app)
+      .put('/api/${resourceName}/bulk')
+      .send(${bulkUpdatePayloadLiteral});
+
+    expect(response.status).toBe(401);
+  });
+
+  test('PUT /bulk com permissao de escrita retorna 200', async () => {
+    const token = createAccessToken({ roles: ['operator'], scopes: ['${resourceName}:write'] });
+
+    const response = await request(app)
+      .put('/api/${resourceName}/bulk')
+      .set('Authorization', 'Bearer ' + token)
+      .send(${bulkUpdatePayloadLiteral});
+
+    expect(response.status).toBe(200);
+    expect(${serviceName}.updateBulk).toHaveBeenCalledTimes(1);
+  });
+
+  test('DELETE /bulk sem token retorna 401', async () => {
+    const response = await request(app)
+      .delete('/api/${resourceName}/bulk')
+      .send([1, 2]);
+
+    expect(response.status).toBe(401);
+  });
+
+  test('DELETE /bulk com perfil admin retorna 204', async () => {
+    const token = createAccessToken({ roles: ['admin'], scopes: ['${resourceName}:delete'] });
+
+    const response = await request(app)
+      .delete('/api/${resourceName}/bulk')
+      .set('Authorization', 'Bearer ' + token)
+      .send([1, 2]);
+
+    expect(response.status).toBe(204);
+    expect(${serviceName}.deleteBulk).toHaveBeenCalledWith([1, 2]);
   });
 
   describe('Matriz de cobertura recomendada', () => {

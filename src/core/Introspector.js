@@ -1,4 +1,4 @@
-const mysql = require("mysql2/promise");
+const mysql = require('mysql2/promise');
 
 /**
  * Responsável por ler metadados do banco MySQL e montar um schema normalizado.
@@ -38,7 +38,7 @@ class Introspector {
    */
   async getSchema() {
     const connection = await mysql.createConnection(this.config);
-    const [tables] = await connection.query("SHOW TABLES");
+    const [tables] = await connection.query('SHOW TABLES');
     const dbName = this.config.database;
     const tableKey = `Tables_in_${dbName}`;
 
@@ -67,7 +67,7 @@ class Introspector {
         columns: columns.map((col) => ({
           name: col.Field,
           type: col.Type,
-          nullable: col.Null === "YES",
+          nullable: col.Null === 'YES',
           key: col.Key,
           default: col.Default,
           extra: col.Extra,
@@ -82,6 +82,32 @@ class Introspector {
 
     await connection.end();
     return schema;
+  }
+
+  /**
+   * Exporta dados das tabelas informadas para geração de seed SQL.
+   *
+   * Requisitos:
+   * - As tabelas devem existir no banco atual.
+   * - Usuário precisa de permissão de SELECT.
+   *
+   * @param {string[]} tableNames Tabelas a serem exportadas.
+   * @returns {Promise<Record<string, any[]>>} Mapa tabela -> linhas.
+   */
+  async getDataSnapshot(tableNames = []) {
+    const connection = await mysql.createConnection(this.config);
+    const snapshot = {};
+
+    try {
+      for (const tableName of tableNames) {
+        const [rows] = await connection.query(`SELECT * FROM \`${tableName}\``);
+        snapshot[tableName] = rows;
+      }
+    } finally {
+      await connection.end();
+    }
+
+    return snapshot;
   }
 }
 

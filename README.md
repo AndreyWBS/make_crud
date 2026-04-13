@@ -17,6 +17,8 @@ O projeto gerado segue esta estrutura:
 - `src/docs/swagger`: Especificação OpenAPI usada pelo Swagger UI.
 - `src/utils`: Utilitários como logger.
 - `tests`: Base de testes automatizados (Jest + Supertest) com matriz de cobertura CRUD, segurança e contrato.
+- `migrations`: Scripts SQL para criar estrutura e seed opcional.
+- `src/scripts/migrate.js`: Runner para aplicar migrações no ambiente alvo.
 
 ## Como usar o Gerador
 
@@ -34,6 +36,34 @@ O projeto gerado segue esta estrutura:
 5. Em ambiente local, acesse Swagger em `/api-docs` (exemplo: `http://localhost:3000/api-docs`).
 6. Em produção, Swagger fica desabilitado por padrão (ou protegido por admin + allowlist de IP quando habilitado).
 7. Se quiser consumir o OpenAPI em JSON, use `/api-docs.json` quando Swagger estiver habilitado.
+
+## Migrações (estrutura e dados)
+
+O projeto gerado inclui migrações para facilitar subir a API em outra máquina.
+
+- `migrations/001_schema.sql`: cria banco (se não existir), tabelas e FKs.
+- `migrations/002_seed.sql`: seed opcional de dados.
+- `src/scripts/migrate.js`: aplica migrações via Node + MySQL2.
+
+Comandos no projeto gerado:
+
+- `npm run migrate`: aplica apenas estrutura.
+- `npm run migrate:with-seed`: aplica estrutura e seed.
+
+Configuração no `api.config.json` do gerador:
+
+```json
+{
+	"global": {
+		"migrations": {
+			"enabled": true,
+			"includeSourceData": false
+		}
+	}
+}
+```
+
+Quando `includeSourceData=true`, o gerador exporta dados da base de origem para montar o seed SQL.
 
 ## Baseline de Segurança Gerado
 

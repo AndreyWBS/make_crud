@@ -1,6 +1,6 @@
-const path = require("path");
-const fs = require("fs-extra");
-const BaseGenerator = require("../core/BaseGenerator");
+const path = require('path');
+const fs = require('fs-extra');
+const BaseGenerator = require('../core/BaseGenerator');
 
 /**
  * Gera arquivos estáticos únicos (não dependem de tabela individual).
@@ -16,11 +16,15 @@ class StaticFileGenerator extends BaseGenerator {
    * @param {string} targetDir Diretório raiz de saída.
    * @param {string} relativePath Caminho relativo do arquivo final.
    * @param {(tables: string[], schema: object) => string} templateFn Função de template para arquivo único.
+   * @param {boolean} [enabled=true] Se false, pula a geração deste arquivo.
+   * @param {((tableName: string) => boolean)|null} [tablesFilter=null] Filtra tabelas antes de passar ao template.
    */
-  constructor(targetDir, relativePath, templateFn) {
+  constructor(targetDir, relativePath, templateFn, enabled = true, tablesFilter = null) {
     super(targetDir);
     this.relativePath = relativePath; // e.g., 'src/config/database.js'
     this.templateFn = templateFn;
+    this.enabled = enabled;
+    this.tablesFilter = tablesFilter;
   }
 
   /**
@@ -38,9 +42,15 @@ class StaticFileGenerator extends BaseGenerator {
    * @returns {Promise<void>}
    */
   async generate(schema) {
+    if (!this.enabled) return;
+
+    const filteredSchema = this.tablesFilter
+      ? Object.fromEntries(Object.entries(schema).filter(([t]) => this.tablesFilter(t)))
+      : schema;
+
     const fullPath = path.join(this.targetDir, this.relativePath);
     await fs.ensureDir(path.dirname(fullPath));
-    const content = this.templateFn(Object.keys(schema), schema);
+    const content = this.templateFn(Object.keys(filteredSchema), filteredSchema);
     await fs.writeFile(fullPath, content);
   }
 }

@@ -16,14 +16,16 @@ class LayerGenerator extends BaseGenerator {
   /**
    * @param {string} targetDir Diretório raiz de saída.
    * @param {string} layerName Nome da camada (ex.: 'controllers').
-   * @param {(tableName: string, tableSchema: object, fullSchema?: object) => string} templateFn Função de template por tabela.
+   * @param {(tableName: string, tableSchema: object, fullSchema?: object, tableConfig?: object|null) => string} templateFn Função de template por tabela.
    * @param {string} [extention='js'] Extensão do arquivo gerado.
+   * @param {Record<string, { enabled: boolean, routes: Record<string, boolean>, customRoutes?: any[] }>|null} [tablesConfig=null] Config por tabela. Se informado, filtra tabelas desabilitadas e passa config da tabela ao template.
    */
-  constructor(targetDir, layerName, templateFn, extention = 'js') {
+  constructor(targetDir, layerName, templateFn, extention = 'js', tablesConfig = null) {
     super(targetDir);
     this.layerName = layerName; // e.g., 'controllers'
     this.templateFn = templateFn;
     this.extention = extention;
+    this.tablesConfig = tablesConfig;
   }
 
   /**
@@ -41,7 +43,12 @@ class LayerGenerator extends BaseGenerator {
    * @returns {Promise<void>}
    */
   async generate(schema) {
-    const tables = Object.keys(schema);
+    let tables = Object.keys(schema);
+
+    if (this.tablesConfig) {
+      tables = tables.filter((t) => this.tablesConfig[t]?.enabled !== false);
+    }
+
     const layerPath = path.join(this.targetDir, 'src', this.layerName);
     await fs.ensureDir(layerPath);
 
@@ -55,7 +62,8 @@ class LayerGenerator extends BaseGenerator {
       }
       if (baseLayerName === 'repositories') suffix = 'Repository';
       const fileName = `${camelCase(table)}${suffix}.${this.extention}`;
-      const content = this.templateFn(table, schema[table], schema);
+      const tableConfig = this.tablesConfig ? (this.tablesConfig[table] ?? null) : null;
+      const content = this.templateFn(table, schema[table], schema, tableConfig);
       await fs.writeFile(path.join(layerPath, fileName), content);
     }
   }

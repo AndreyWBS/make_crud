@@ -87,6 +87,9 @@ Este documento descreve a arquitetura base da API gerada, com foco em fluxo de e
 - src/app.js: composição de middlewares globais, rotas e tratamento de erros.
 - src/config/env.js: leitura e validação de variáveis de ambiente.
 - src/config/database.js: criação e gerenciamento do pool MySQL.
+- migrations/001_schema.sql: criação idempotente de banco, tabelas e chaves.
+- migrations/002_seed.sql: carga inicial opcional de dados.
+- src/scripts/migrate.js: runner de migração (schema only ou schema + seed).
 - src/middlewares: autenticação, autorização, correlação de requisição, logs e erros.
 - src/utils: utilitários transversais (logger, AppError, paginação).
 
@@ -124,6 +127,76 @@ Este documento descreve a arquitetura base da API gerada, com foco em fluxo de e
 - Quantidade de recursos detectados no schema: ${tableCount}
 `;
   },
+
+  migrationGuideMd: () => `# Migrações de Banco
+
+## Objetivo
+
+Permitir subir a estrutura do banco em outra máquina de forma idempotente, com opção de popular dados iniciais.
+
+## Arquivos gerados
+
+- migrations/001_schema.sql
+    - Cria banco se não existir.
+    - Seleciona o banco alvo.
+    - Cria tabelas e constraints (FKs) com segurança de reexecução.
+- migrations/002_seed.sql
+    - Script de seed opcional.
+    - Pode conter inserts da base de origem quando habilitado no gerador.
+- src/scripts/migrate.js
+    - Runner Node.js que aplica os scripts SQL no ambiente alvo.
+
+## Modos de execução
+
+### Apenas estrutura (sem dados)
+
+Executa somente o schema:
+
+npm run migrate
+
+### Estrutura + dados iniciais
+
+Executa schema e seed:
+
+npm run migrate:with-seed
+
+## Pré-requisitos
+
+- Variáveis de banco válidas no .env:
+    - DB_HOST
+    - DB_USER
+    - DB_PASSWORD
+    - DB_PORT
+    - DB_NAME
+- Permissões para criar banco/tabelas e inserir dados.
+
+## Configuração no gerador
+
+No arquivo api.config.json:
+
+{
+    "global": {
+        "migrations": {
+            "enabled": true,
+            "includeSourceData": false
+        }
+    }
+}
+
+Regras:
+
+- enabled=true: gera arquivos de migração na API.
+- includeSourceData=true: exporta dados da base de origem para o seed.
+- Override por ambiente no gerador:
+    - MIGRATIONS_INCLUDE_SOURCE_DATA=true
+
+## Boas práticas
+
+- Execute em ambiente limpo quando estiver validando seeds.
+- Revise o seed antes de produção para evitar dados sensíveis.
+- Versione o diretório migrations no Git para rastreabilidade.
+- Em produção, prefira pipeline de release com backup prévio.
+`,
 
   requestFlowMd: () => `# Fluxo Técnico da Requisição
 
