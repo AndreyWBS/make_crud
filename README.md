@@ -19,7 +19,7 @@ npm install -g gerador-crud
 Por padrao:
 
 - entrada: diretorio atual
-- saida: `dist` dentro do diretorio atual
+- saida: `dist` dentro do diretorio atual (quando `--output` nao for informado)
 - banco: `db.config.json` dentro do diretorio de entrada
 - config: `api.config.json` dentro do diretorio de entrada
 - env: `.env` dentro do diretorio de entrada

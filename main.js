@@ -449,9 +449,14 @@ async function generate(options = {}) {
     mergeDatabaseConfigBundle(existingDatabaseConfig, envDatabaseConfig, preferEnvCredentials),
   );
 
-  if (isInit || !existingDatabaseConfig) {
+  if (!existingDatabaseConfig) {
     await databaseConfigBuilder.save(dbConfigBundle);
   }
+
+  const databaseConfigStatus = existingDatabaseConfig
+    ? 'already exists (skipping file update)'
+    : 'created';
+
   if (isInit || !existingConfig) {
     console.log(`Entrada: ${inputDir}`);
     console.log(`Banco: ${dbConfigPath}`);
@@ -461,9 +466,7 @@ async function generate(options = {}) {
     console.log(
       `Prefer env credentials: ${preferEnvCredentials ? 'enabled' : 'disabled'} (api.config.json)`,
     );
-    console.log(
-      `Database config ${existingDatabaseConfig ? 'updated' : 'created'}: ${dbConfigPath}`,
-    );
+    console.log(`Database config ${databaseConfigStatus}: ${dbConfigPath}`);
     console.log('Introspecting database to build api.config.json...');
 
     const schemasByDatabase = await introspectSchemas(dbConfigBundle.databases, dbConfigPath);
