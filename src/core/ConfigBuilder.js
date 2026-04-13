@@ -17,9 +17,10 @@ const DEFAULT_ROUTES = {
 };
 
 const DEFAULT_GLOBAL = {
+  language: 'pt',
   swagger: true,
-  docs_md: true,
-  docs_html: true,
+  docs_md: false,
+  docs_html: false,
   docs_technical: true,
   tests: true,
   prettier: true,
@@ -37,6 +38,26 @@ const DEFAULT_DATABASE_OPTIONS = {
   enabled: true,
   outputDir: null,
 };
+
+function normalizeLanguage(value, fallback = 'pt') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (normalized === 'pt' || normalized === 'pt-br' || normalized === 'pt_br') {
+    return 'pt';
+  }
+
+  if (normalized === 'en' || normalized === 'en-us' || normalized === 'en_us') {
+    return 'en';
+  }
+
+  return fallback;
+}
 
 /**
  * Constrói e persiste o arquivo de configuração api.config.json.
@@ -91,6 +112,7 @@ class ConfigBuilder {
     const global = {
       ...DEFAULT_GLOBAL,
       ...(existing.global || {}),
+      language: normalizeLanguage(existing.global?.language, DEFAULT_GLOBAL.language),
       databaseConfig,
       migrations:
         typeof existing.global?.migrations === 'object' && existing.global?.migrations !== null

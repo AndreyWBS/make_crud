@@ -1,3 +1,136 @@
+function normalizeLanguage(language = 'pt') {
+  const normalized = String(language || '')
+    .trim()
+    .toLowerCase();
+
+  if (normalized === 'pt' || normalized === 'pt-br' || normalized === 'pt_br') {
+    return 'pt';
+  }
+
+  return 'en';
+}
+
+function getErrorI18n(language = 'pt') {
+  const locale = normalizeLanguage(language);
+
+  const dictionary = {
+    en: {
+      unauthorized: 'Unauthorized',
+      forbidden: 'Forbidden',
+      invalidJsonBody: 'Invalid JSON in request body.',
+      unexpectedError: 'An unexpected error occurred. Please try again later.',
+      invalidPage: 'Invalid page. It must be an integer >= 1.',
+      invalidLimitPrefix: 'Invalid limit. It must be an integer between 1 and ',
+      invalidLimitSuffix: '.',
+      invalidIncludeTotal: 'Invalid includeTotal. Use true or false.',
+      invalidFilterColumnsPrefix: 'Invalid filter columns: ',
+      eachBulkItemObject: 'Each bulk item must be an object',
+      bulkItemsSameShape: 'All bulk items must have the same shape',
+      notFoundSuffix: ' not found',
+      bulkInsertBody: 'Body must be a non-empty array for bulk insert',
+      bulkUpdateBody: 'Body must be a non-empty array for bulk update',
+      bulkUpdatePrimaryKeySuffix: ' is required in each item for bulk update',
+      bulkDeleteBody: 'Body must be a non-empty array of ids for bulk delete',
+      columnsConfigBody: 'Columns config must be a non-empty array',
+      invalidSelectedColumnsPrefix: 'Invalid selected columns: ',
+      invalidSearchColumnPrefix: 'Invalid column for search: ',
+      mysqlErrorMap: {
+        ER_DUP_ENTRY: { status: 409, message: 'Conflict: duplicate entry.' },
+        ER_NO_REFERENCED_ROW_2: {
+          status: 422,
+          message: 'Unprocessable Entity: foreign key constraint failed.',
+        },
+        ER_ROW_IS_REFERENCED_2: {
+          status: 409,
+          message: 'Conflict: record is referenced by other records.',
+        },
+        ER_BAD_FIELD_ERROR: { status: 400, message: 'Bad Request: unknown column.' },
+        ER_PARSE_ERROR: { status: 400, message: 'Bad Request: query parse error.' },
+        ER_DATA_TOO_LONG: {
+          status: 422,
+          message: 'Unprocessable Entity: value too long for column.',
+        },
+        ER_TRUNCATED_WRONG_VALUE: {
+          status: 422,
+          message: 'Unprocessable Entity: incorrect value for column.',
+        },
+      },
+      httpStatusText: {
+        400: 'Bad Request',
+        401: 'Unauthorized',
+        403: 'Forbidden',
+        404: 'Not Found',
+        405: 'Method Not Allowed',
+        409: 'Conflict',
+        410: 'Gone',
+        422: 'Unprocessable Entity',
+        429: 'Too Many Requests',
+        500: 'Internal Server Error',
+        501: 'Not Implemented',
+        503: 'Service Unavailable',
+      },
+    },
+    pt: {
+      unauthorized: 'Nao autorizado',
+      forbidden: 'Proibido',
+      invalidJsonBody: 'JSON invalido no corpo da requisicao.',
+      unexpectedError: 'Ocorreu um erro inesperado. Tente novamente mais tarde.',
+      invalidPage: 'Pagina invalida. Ela deve ser um inteiro >= 1.',
+      invalidLimitPrefix: 'Limite invalido. Ele deve ser um inteiro entre 1 e ',
+      invalidLimitSuffix: '.',
+      invalidIncludeTotal: 'includeTotal invalido. Use true ou false.',
+      invalidFilterColumnsPrefix: 'Colunas de filtro invalidas: ',
+      eachBulkItemObject: 'Cada item em lote deve ser um objeto',
+      bulkItemsSameShape: 'Todos os itens em lote devem ter o mesmo formato',
+      notFoundSuffix: ' nao encontrado',
+      bulkInsertBody: 'O corpo deve ser um array nao vazio para insercao em lote',
+      bulkUpdateBody: 'O corpo deve ser um array nao vazio para atualizacao em lote',
+      bulkUpdatePrimaryKeySuffix: ' e obrigatorio em cada item para atualizacao em lote',
+      bulkDeleteBody: 'O corpo deve ser um array nao vazio de ids para exclusao em lote',
+      columnsConfigBody: 'A configuracao de colunas deve ser um array nao vazio',
+      invalidSelectedColumnsPrefix: 'Colunas selecionadas invalidas: ',
+      invalidSearchColumnPrefix: 'Coluna invalida para busca: ',
+      mysqlErrorMap: {
+        ER_DUP_ENTRY: { status: 409, message: 'Conflito: registro duplicado.' },
+        ER_NO_REFERENCED_ROW_2: {
+          status: 422,
+          message: 'Entidade nao processavel: falha na restricao de chave estrangeira.',
+        },
+        ER_ROW_IS_REFERENCED_2: {
+          status: 409,
+          message: 'Conflito: registro referenciado por outros registros.',
+        },
+        ER_BAD_FIELD_ERROR: { status: 400, message: 'Requisicao invalida: coluna desconhecida.' },
+        ER_PARSE_ERROR: { status: 400, message: 'Requisicao invalida: erro de parse da query.' },
+        ER_DATA_TOO_LONG: {
+          status: 422,
+          message: 'Entidade nao processavel: valor muito longo para a coluna.',
+        },
+        ER_TRUNCATED_WRONG_VALUE: {
+          status: 422,
+          message: 'Entidade nao processavel: valor incorreto para a coluna.',
+        },
+      },
+      httpStatusText: {
+        400: 'Requisicao Invalida',
+        401: 'Nao Autorizado',
+        403: 'Proibido',
+        404: 'Nao Encontrado',
+        405: 'Metodo Nao Permitido',
+        409: 'Conflito',
+        410: 'Indisponivel',
+        422: 'Entidade Nao Processavel',
+        429: 'Muitas Requisicoes',
+        500: 'Erro Interno do Servidor',
+        501: 'Nao Implementado',
+        503: 'Servico Indisponivel',
+      },
+    },
+  };
+
+  return dictionary[locale] || dictionary.en;
+}
+
 module.exports = {
   appError: () => `
 /**
@@ -26,7 +159,9 @@ class AppError extends Error {
 module.exports = AppError;
 `,
 
-  errorMiddleware: () => `
+  errorMiddleware: (language = 'pt') => {
+    const i18n = getErrorI18n(language);
+    return `
 /**
  * @fileoverview Middleware global de tratamento de erros.
  */
@@ -36,15 +171,7 @@ const AppError = require('../utils/AppError');
 
 const isProduction = process.env.NODE_ENV === 'production';
 
-const MYSQL_ERROR_MAP = {
-    ER_DUP_ENTRY:          { status: 409, message: 'Conflict: duplicate entry.' },
-    ER_NO_REFERENCED_ROW_2:{ status: 422, message: 'Unprocessable Entity: foreign key constraint failed.' },
-    ER_ROW_IS_REFERENCED_2:{ status: 409, message: 'Conflict: record is referenced by other records.' },
-    ER_BAD_FIELD_ERROR:    { status: 400, message: 'Bad Request: unknown column.' },
-    ER_PARSE_ERROR:        { status: 400, message: 'Bad Request: query parse error.' },
-    ER_DATA_TOO_LONG:      { status: 422, message: 'Unprocessable Entity: value too long for column.' },
-    ER_TRUNCATED_WRONG_VALUE: { status: 422, message: 'Unprocessable Entity: incorrect value for column.' },
-};
+const MYSQL_ERROR_MAP = ${JSON.stringify(i18n.mysqlErrorMap, null, 4)};
 
 /**
  * Normaliza respostas de erro em formato seguro.
@@ -93,8 +220,8 @@ module.exports = (err, req, res, next) => {
     if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
         return res.status(401).json({
             status: 401,
-            error: 'Unauthorized',
-          message: 'Unauthorized',
+            error: ${JSON.stringify(i18n.unauthorized)},
+          message: ${JSON.stringify(i18n.unauthorized)},
           correlationId: req.id,
         });
     }
@@ -103,8 +230,8 @@ module.exports = (err, req, res, next) => {
     if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
         return res.status(400).json({
             status: 400,
-            error: 'Bad Request',
-            message: 'Invalid JSON in request body.',
+            error: httpStatusText(400),
+            message: ${JSON.stringify(i18n.invalidJsonBody)},
           correlationId: req.id,
         });
     }
@@ -112,8 +239,8 @@ module.exports = (err, req, res, next) => {
     // Fallback: unexpected internal error
     return res.status(500).json({
         status: 500,
-        error: 'Internal Server Error',
-        message: 'An unexpected error occurred. Please try again later.',
+        error: httpStatusText(500),
+        message: ${JSON.stringify(i18n.unexpectedError)},
       correlationId: req.id,
     });
 };
@@ -124,23 +251,11 @@ module.exports = (err, req, res, next) => {
  * @returns {string}
  */
 function httpStatusText(code) {
-    const map = {
-        400: 'Bad Request',
-        401: 'Unauthorized',
-        403: 'Forbidden',
-        404: 'Not Found',
-        405: 'Method Not Allowed',
-        409: 'Conflict',
-        410: 'Gone',
-        422: 'Unprocessable Entity',
-        429: 'Too Many Requests',
-        500: 'Internal Server Error',
-        501: 'Not Implemented',
-        503: 'Service Unavailable',
-    };
+  const map = ${JSON.stringify(i18n.httpStatusText, null, 4)};
     return map[code] || 'Error';
 }
-`,
+`;
+  },
 
   logger: () => `
 /**
@@ -277,7 +392,9 @@ module.exports = (req, res, next) => {
 };
 `,
 
-  pagination: () => `
+  pagination: (language = 'pt') => {
+    const i18n = getErrorI18n(language);
+    return `
 /**
  * @fileoverview Utilitários de paginação e normalização de parâmetros.
  */
@@ -298,10 +415,10 @@ function normalizePagination(page, limit) {
   const parsedLimit = Number.parseInt(limit, 10);
 
   if (!Number.isInteger(parsedPage) || parsedPage < 1) {
-    throw new AppError(400, 'Invalid page. It must be an integer >= 1.');
+    throw new AppError(400, ${JSON.stringify(i18n.invalidPage)});
   }
   if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > MAX_LIMIT) {
-    throw new AppError(400, 'Invalid limit. It must be an integer between 1 and ' + MAX_LIMIT + '.');
+    throw new AppError(400, ${JSON.stringify(i18n.invalidLimitPrefix)} + MAX_LIMIT + ${JSON.stringify(i18n.invalidLimitSuffix)});
   }
 
   return { page: parsedPage, limit: parsedLimit };
@@ -320,7 +437,7 @@ function parseIncludeTotal(value) {
     if (value.toLowerCase() === 'true') return true;
     if (value.toLowerCase() === 'false') return false;
   }
-  throw new AppError(400, 'Invalid includeTotal. Use true or false.');
+  throw new AppError(400, ${JSON.stringify(i18n.invalidIncludeTotal)});
 }
 
 module.exports = {
@@ -328,6 +445,342 @@ module.exports = {
   normalizePagination,
   parseIncludeTotal
 };
+`;
+  },
+
+  baseCrudService: (language = 'pt') => {
+    const i18n = getErrorI18n(language);
+    return `
+/**
+ * @fileoverview Classe base para serviços CRUD.
+ */
+
+const AppError = require('../utils/AppError');
+const { normalizePagination, parseIncludeTotal } = require('../utils/pagination');
+
+const DEFAULT_LIMIT = 10;
+
+class BaseCrudService {
+  constructor({ repository, entityName, primaryKey = 'id', allowedColumns = [], stringColumns = [] }) {
+    this.repository = repository;
+    this.entityName = entityName;
+    this.primaryKey = primaryKey;
+    this.allowedColumns = new Set(allowedColumns);
+    this.stringColumns = new Set(stringColumns);
+  }
+
+  assertAllowedFilterColumns(filters = {}) {
+    const invalidColumns = Object.keys(filters).filter((column) => !this.allowedColumns.has(column));
+    if (invalidColumns.length > 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.invalidFilterColumnsPrefix)} + invalidColumns.join(', '));
+    }
+  }
+
+  assertUniformBulkShape(dataArray = []) {
+    const firstKeys = Object.keys(dataArray[0]).sort();
+    for (let i = 0; i < dataArray.length; i++) {
+      const item = dataArray[i];
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new AppError(400, ${JSON.stringify(i18n.eachBulkItemObject)});
+      }
+
+      const currentKeys = Object.keys(item).sort();
+      if (currentKeys.length !== firstKeys.length || currentKeys.some((key, idx) => key !== firstKeys[idx])) {
+        throw new AppError(400, ${JSON.stringify(i18n.bulkItemsSameShape)});
+      }
+    }
+  }
+
+  async getAll(filters, page = 1, limit = DEFAULT_LIMIT, includeTotal = true) {
+    const normalized = normalizePagination(page, limit);
+    const shouldIncludeTotal = parseIncludeTotal(includeTotal);
+    this.assertAllowedFilterColumns(filters || {});
+
+    const { data, total } = await this.repository.findAll(
+      filters,
+      normalized.page,
+      normalized.limit,
+      shouldIncludeTotal,
+    );
+    const totalPages = shouldIncludeTotal ? Math.ceil(total / normalized.limit) : null;
+
+    return {
+      data,
+      meta: {
+        totalItems: total,
+        totalPages,
+        includeTotal: shouldIncludeTotal,
+        currentPage: normalized.page,
+        itemsPerPage: normalized.limit,
+      },
+    };
+  }
+
+  async getById(id) {
+    const item = await this.repository.findById(id);
+    if (!item) throw new AppError(404, this.entityName + ${JSON.stringify(i18n.notFoundSuffix)});
+    return item;
+  }
+
+  async getByIdWithRelations(id, depth = 1) {
+    const item = await this.repository.findByIdWithRelations(id, depth);
+    if (!item) throw new AppError(404, this.entityName + ${JSON.stringify(i18n.notFoundSuffix)});
+    return item;
+  }
+
+  async create(data) {
+    return this.repository.create(data);
+  }
+
+  async createBulk(dataArray) {
+    if (!Array.isArray(dataArray) || dataArray.length === 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.bulkInsertBody)});
+    }
+    this.assertUniformBulkShape(dataArray);
+    return this.repository.createBulk(dataArray);
+  }
+
+  async update(id, data) {
+    await this.getById(id);
+    return this.repository.update(id, data);
+  }
+
+  async delete(id) {
+    await this.getById(id);
+    return this.repository.delete(id);
+  }
+
+  async updateBulk(dataArray) {
+    if (!Array.isArray(dataArray) || dataArray.length === 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.bulkUpdateBody)});
+    }
+    for (let i = 0; i < dataArray.length; i++) {
+      const item = dataArray[i];
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new AppError(400, ${JSON.stringify(i18n.eachBulkItemObject)});
+      }
+      if (item[this.primaryKey] === undefined || item[this.primaryKey] === null) {
+        throw new AppError(400, this.primaryKey + ${JSON.stringify(i18n.bulkUpdatePrimaryKeySuffix)});
+      }
+    }
+    return this.repository.updateBulk(dataArray);
+  }
+
+  async deleteBulk(ids) {
+    if (!Array.isArray(ids) || ids.length === 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.bulkDeleteBody)});
+    }
+    return this.repository.deleteBulk(ids);
+  }
+
+  async getSelectedColumns(columns) {
+    if (!Array.isArray(columns) || columns.length === 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.columnsConfigBody)});
+    }
+
+    const normalizedColumns = columns
+      .filter((column) => typeof column === 'string' && column.trim())
+      .map((column) => column.trim());
+
+    if (normalizedColumns.length === 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.columnsConfigBody)});
+    }
+
+    const invalidColumns = normalizedColumns.filter((column) => !this.allowedColumns.has(column));
+    if (invalidColumns.length > 0) {
+      throw new AppError(400, ${JSON.stringify(i18n.invalidSelectedColumnsPrefix)} + invalidColumns.join(', '));
+    }
+
+    return this.repository.findSelectedColumns(normalizedColumns);
+  }
+
+  async findByColumnPaginated(columnName, value, page = 1, limit = DEFAULT_LIMIT, includeTotal = true) {
+    if (!this.allowedColumns.has(columnName)) {
+      throw new AppError(400, ${JSON.stringify(i18n.invalidSearchColumnPrefix)} + columnName);
+    }
+
+    const normalized = normalizePagination(page, limit);
+    const shouldIncludeTotal = parseIncludeTotal(includeTotal);
+    const isStringColumn = this.stringColumns.has(columnName);
+
+    const { data, total } = await this.repository.findByColumnPaginated(
+      columnName,
+      value,
+      isStringColumn,
+      normalized.page,
+      normalized.limit,
+      shouldIncludeTotal,
+    );
+    const totalPages = shouldIncludeTotal ? Math.ceil(total / normalized.limit) : null;
+
+    return {
+      data,
+      meta: {
+        totalItems: total,
+        totalPages,
+        includeTotal: shouldIncludeTotal,
+        currentPage: normalized.page,
+        itemsPerPage: normalized.limit,
+      },
+    };
+  }
+}
+
+module.exports = BaseCrudService;
+`;
+  },
+
+  baseCrudController: () => `
+/**
+ * @fileoverview Classe base para controllers CRUD HTTP.
+ */
+
+class BaseCrudController {
+  constructor({ service }) {
+    this.service = service;
+    this.getAll = this.getAll.bind(this);
+    this.getById = this.getById.bind(this);
+    this.getByIdWithRelations = this.getByIdWithRelations.bind(this);
+    this.create = this.create.bind(this);
+    this.createBulk = this.createBulk.bind(this);
+    this.update = this.update.bind(this);
+    this.delete = this.delete.bind(this);
+    this.updateBulk = this.updateBulk.bind(this);
+    this.deleteBulk = this.deleteBulk.bind(this);
+    this.findByColumn = this.findByColumn.bind(this);
+  }
+
+  buildPaginationLinks(req, result, baseUrl, filters = {}) {
+    const queryParams = new URLSearchParams({ ...filters, includeTotal: result.meta.includeTotal });
+    const links = {
+      self: baseUrl + '?page=' + result.meta.currentPage + '&limit=' + result.meta.itemsPerPage + '&' + queryParams,
+    };
+
+    if (result.meta.includeTotal) {
+      links.first = baseUrl + '?page=1&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+      links.last = baseUrl + '?page=' + result.meta.totalPages + '&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+
+      if (result.meta.currentPage > 1) {
+        links.prev = baseUrl + '?page=' + (result.meta.currentPage - 1) + '&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+      }
+      if (result.meta.currentPage < result.meta.totalPages) {
+        links.next = baseUrl + '?page=' + (result.meta.currentPage + 1) + '&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+      }
+      return links;
+    }
+
+    if (result.meta.currentPage > 1) {
+      links.prev = baseUrl + '?page=' + (result.meta.currentPage - 1) + '&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+    }
+    if (result.data.length === result.meta.itemsPerPage) {
+      links.next = baseUrl + '?page=' + (result.meta.currentPage + 1) + '&limit=' + result.meta.itemsPerPage + '&' + queryParams;
+    }
+    return links;
+  }
+
+  async getAll(req, res, next) {
+    try {
+      const { page = 1, limit = 10, includeTotal = 'true', ...filters } = req.query;
+      const result = await this.service.getAll(filters, page, limit, includeTotal);
+
+      const baseUrl = req.protocol + '://' + req.get('host') + req.baseUrl;
+      result.links = this.buildPaginationLinks(req, result, baseUrl, filters);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getById(req, res, next) {
+    try {
+      const item = await this.service.getById(req.params.id);
+      res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async getByIdWithRelations(req, res, next) {
+    try {
+      const { depth = 1 } = req.query;
+      const item = await this.service.getByIdWithRelations(req.params.id, depth);
+      res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async create(req, res, next) {
+    try {
+      const item = await this.service.create(req.body);
+      res.status(201).json(item);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async createBulk(req, res, next) {
+    try {
+      const result = await this.service.createBulk(req.body);
+      res.status(201).json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async update(req, res, next) {
+    try {
+      const item = await this.service.update(req.params.id, req.body);
+      res.json(item);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async delete(req, res, next) {
+    try {
+      await this.service.delete(req.params.id);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async updateBulk(req, res, next) {
+    try {
+      const result = await this.service.updateBulk(req.body);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async deleteBulk(req, res, next) {
+    try {
+      await this.service.deleteBulk(req.body);
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  async findByColumn(req, res, next) {
+    try {
+      const { column, value } = req.params;
+      const { page = 1, limit = 10, includeTotal = 'true' } = req.query;
+      const result = await this.service.findByColumnPaginated(column, value, page, limit, includeTotal);
+
+      const baseUrl =
+        req.protocol + '://' + req.get('host') + req.baseUrl + '/search/' + column + '/' + value;
+      result.links = this.buildPaginationLinks(req, result, baseUrl);
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+}
+
+module.exports = BaseCrudController;
 `,
 
   server: () => `
@@ -628,7 +1081,9 @@ require('dotenv').config();
 };
 `,
 
-  authMiddleware: () => `
+  authMiddleware: (language = 'pt') => {
+    const i18n = getErrorI18n(language);
+    return `
 /**
  * @fileoverview Middleware de autenticação JWT Bearer.
  */
@@ -642,7 +1097,7 @@ const env = require('../config/env');
    * @returns {void}
    */
   function unauthorized(next) {
-    return next(new AppError(401, 'Unauthorized'));
+    return next(new AppError(401, ${JSON.stringify(i18n.unauthorized)}));
   }
 
   /**
@@ -673,7 +1128,7 @@ const env = require('../config/env');
     const kid = decoded && decoded.header ? decoded.header.kid : null;
 
     if (!kid || !env.JWT_KEYS[kid]) {
-      throw new AppError(401, 'Unauthorized');
+      throw new AppError(401, ${JSON.stringify(i18n.unauthorized)});
     }
 
     return env.JWT_KEYS[kid];
@@ -688,7 +1143,7 @@ const env = require('../config/env');
     const missing = requiredClaims.filter((claim) => decoded[claim] === undefined || decoded[claim] === null || decoded[claim] === '');
 
     if (missing.length > 0) {
-      throw new AppError(401, 'Unauthorized');
+      throw new AppError(401, ${JSON.stringify(i18n.unauthorized)});
     }
   }
 
@@ -741,9 +1196,12 @@ module.exports = (req, res, next) => {
       }
     );
 };
-`,
+`;
+  },
 
-  authorizeMiddleware: () => `
+  authorizeMiddleware: (language = 'pt') => {
+    const i18n = getErrorI18n(language);
+    return `
   /**
    * @fileoverview Middleware de autorização por papel e escopo.
    */
@@ -793,13 +1251,14 @@ module.exports = (req, res, next) => {
         Array.from(requiredScopes).some((scope) => userScopes.has(scope));
 
       if (!roleAllowed || !scopeAllowed) {
-        return next(new AppError(403, 'Forbidden'));
+        return next(new AppError(403, ${JSON.stringify(i18n.forbidden)}));
       }
 
       return next();
     };
   };
-  `,
+  `;
+  },
 
   migrationsSchemaSql: (tables, schema) => {
     const tableNames = Array.isArray(tables) ? tables : [];

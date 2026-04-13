@@ -32,6 +32,7 @@ gerador-crud --input ./meu-projeto
 gerador-crud --input ./entrada --output ./saida
 gerador-crud --input ./entrada --db-config ./configs/db.config.json
 gerador-crud --input ./entrada --config ./configs/api.config.json --env ./configs/.env
+gerador-crud --input ./entrada --lang pt
 ```
 
 Flags suportadas:
@@ -41,6 +42,7 @@ Flags suportadas:
 - `--db-config`, `-b`: caminho do JSON com as conexoes dos bancos
 - `--config`, `-c`: caminho do `api.config.json`
 - `--env`, `-e`: caminho do arquivo `.env`
+- `--lang`, `-l`: idioma das mensagens de erro da API gerada (`en` ou `pt`)
 - `--dir`, `-d`: alias legado para `--input`
 - `--init`: introspecta os bancos e cria ou atualiza os arquivos de configuracao
 
@@ -98,6 +100,7 @@ Ao rodar `gerador-crud --init`, a CLI executa nesta ordem:
 ```json
 {
   "global": {
+    "language": "en",
     "swagger": true,
     "docs_md": true,
     "docs_html": true,

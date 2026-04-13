@@ -151,7 +151,7 @@ test('infra templates contem utilitario de paginacao e configuracoes de observab
   assert.match(loggerOutput, /\[REDACTED\]/);
   assert.match(authOutput, /assertRequiredClaims/);
   assert.match(authOutput, /algorithms: env\.JWT_ALGORITHMS/);
-  assert.match(authorizeOutput, /new AppError\(403, 'Forbidden'\)/);
+  assert.match(authorizeOutput, /new AppError\(403, ['\"]Forbidden['\"]\)/);
   assert.match(requestContextOutput, /x-correlation-id/);
   assert.match(requestLoggerOutput, /http\.request/);
   assert.match(appOutput, /helmet/);
@@ -176,6 +176,21 @@ test('infra templates contem utilitario de paginacao e configuracoes de observab
   assert.equal(packageJson.scripts['test:integration'], 'jest tests/integration --runInBand');
   assert.ok(packageJson.devDependencies.jest);
   assert.ok(packageJson.devDependencies.supertest);
+});
+
+test('infra templates suportam mensagens em portugues', () => {
+  const paginationPtOutput = infraTemplates.pagination('pt');
+  const errorMiddlewarePtOutput = infraTemplates.errorMiddleware('pt');
+  const authMiddlewarePtOutput = infraTemplates.authMiddleware('pt');
+  const authorizeMiddlewarePtOutput = infraTemplates.authorizeMiddleware('pt');
+  const baseCrudServicePtOutput = infraTemplates.baseCrudService('pt');
+
+  assert.match(paginationPtOutput, /Pagina invalida\. Ela deve ser um inteiro >= 1\./);
+  assert.match(errorMiddlewarePtOutput, /Nao autorizado/);
+  assert.match(errorMiddlewarePtOutput, /JSON invalido no corpo da requisicao\./);
+  assert.match(authMiddlewarePtOutput, /new AppError\(401, ['\"]Nao autorizado['\"]\)/);
+  assert.match(authorizeMiddlewarePtOutput, /new AppError\(403, ['\"]Proibido['\"]\)/);
+  assert.match(baseCrudServicePtOutput, /nao encontrado/);
 });
 
 test('tests templates geram suite base de integracao e arquivos de suporte', () => {

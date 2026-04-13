@@ -39,6 +39,26 @@ function getArgValue(args, longFlag, shortFlag) {
   return null;
 }
 
+function resolveLanguage(value, fallback = 'pt') {
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
+
+  if (!normalized) {
+    return fallback;
+  }
+
+  if (normalized === 'pt' || normalized === 'pt-br' || normalized === 'pt_br') {
+    return 'pt';
+  }
+
+  if (normalized === 'en' || normalized === 'en-us' || normalized === 'en_us') {
+    return 'en';
+  }
+
+  return fallback;
+}
+
 function resolveOptions(options = {}) {
   const cliArgs = Array.isArray(options.cliArgs) ? options.cliArgs : [];
   const inputDirArg = getArgValue(cliArgs, '--input', '-i') || getArgValue(cliArgs, '--dir', '-d');
@@ -46,6 +66,7 @@ function resolveOptions(options = {}) {
   const configPathArg = getArgValue(cliArgs, '--config', '-c');
   const dbConfigPathArg = getArgValue(cliArgs, '--db-config', '-b');
   const envPathArg = getArgValue(cliArgs, '--env', '-e');
+  const languageArg = getArgValue(cliArgs, '--lang', '-l');
 
   const inputDir = path.resolve(options.inputDir || inputDirArg || process.cwd());
   const outputDir = path.resolve(options.outputDir || outputDirArg || path.join(inputDir, 'dist'));
@@ -56,6 +77,8 @@ function resolveOptions(options = {}) {
     options.dbConfigPath || dbConfigPathArg || path.join(inputDir, 'db.config.json'),
   );
   const envPath = path.resolve(options.envPath || envPathArg || path.join(inputDir, '.env'));
+  const rawLanguage = options.language || languageArg || null;
+  const language = rawLanguage ? resolveLanguage(rawLanguage) : null;
 
   return {
     cliArgs,
@@ -64,6 +87,7 @@ function resolveOptions(options = {}) {
     configPath,
     dbConfigPath,
     envPath,
+    language,
   };
 }
 
@@ -173,6 +197,7 @@ function addStaticGenerators(
   enabledTables,
   tableDatabaseMap = {},
   generatedEnvFileContent = null,
+  language = 'pt',
 ) {
   engine
     .addGenerator(
@@ -187,17 +212,13 @@ function addStaticGenerators(
     )
     .addGenerator(new StaticFileGenerator(outputDir, 'src/config/env.js', infraTemplates.env))
     .addGenerator(
-      new StaticFileGenerator(
-        outputDir,
-        'src/middlewares/authMiddleware.js',
-        infraTemplates.authMiddleware,
+      new StaticFileGenerator(outputDir, 'src/middlewares/authMiddleware.js', () =>
+        infraTemplates.authMiddleware(language),
       ),
     )
     .addGenerator(
-      new StaticFileGenerator(
-        outputDir,
-        'src/middlewares/authorizeMiddleware.js',
-        infraTemplates.authorizeMiddleware,
+      new StaticFileGenerator(outputDir, 'src/middlewares/authorizeMiddleware.js', () =>
+        infraTemplates.authorizeMiddleware(language),
       ),
     )
     .addGenerator(
@@ -215,10 +236,8 @@ function addStaticGenerators(
       ),
     )
     .addGenerator(
-      new StaticFileGenerator(
-        outputDir,
-        'src/middlewares/errorMiddleware.js',
-        infraTemplates.errorMiddleware,
+      new StaticFileGenerator(outputDir, 'src/middlewares/errorMiddleware.js', () =>
+        infraTemplates.errorMiddleware(language),
       ),
     )
     .addGenerator(
@@ -226,10 +245,30 @@ function addStaticGenerators(
     )
     .addGenerator(new StaticFileGenerator(outputDir, 'src/utils/logger.js', infraTemplates.logger))
     .addGenerator(
-      new StaticFileGenerator(outputDir, 'src/utils/pagination.js', infraTemplates.pagination),
+      new StaticFileGenerator(outputDir, 'src/utils/pagination.js', () =>
+        infraTemplates.pagination(language),
+      ),
     )
     .addGenerator(
-      new StaticFileGenerator(outputDir, 'src/app.js', infraTemplates.app, true, enabledTables),
+      new StaticFileGenerator(outputDir, 'src/core/BaseCrudService.js', () =>
+        infraTemplates.baseCrudService(language),
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        outputDir,
+        'src/core/BaseCrudController.js',
+        infraTemplates.baseCrudController,
+      ),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        outputDir,
+        'src/app.js',
+        (tables, schema) => infraTemplates.app(tables, language),
+        true,
+        enabledTables,
+      ),
     )
     .addGenerator(new StaticFileGenerator(outputDir, 'src/server.js', infraTemplates.server))
     .addGenerator(new StaticFileGenerator(outputDir, 'package.json', infraTemplates.packageJson))
@@ -544,7 +583,7 @@ function addOptionalGenerators(
 }
 
 async function generate(options = {}) {
-  const { cliArgs, inputDir, outputDir, configPath, dbConfigPath, envPath } =
+  const { cliArgs, inputDir, outputDir, configPath, dbConfigPath, envPath, language } =
     resolveOptions(options);
 
   dotenv.config({ path: envPath });
@@ -593,6 +632,9 @@ async function generate(options = {}) {
         )
       : configBuilder.buildDefaultFromSchemas(schemasByDatabase, dbConfigBundle.defaultDatabase);
 
+    config.global = config.global || {};
+    config.global.language = resolveLanguage(language || config.global.language || 'en');
+
     await configBuilder.save(config);
 
     if (!existingConfig) {
@@ -607,6 +649,7 @@ async function generate(options = {}) {
 
   const config = existingConfig;
   const globalConfig = config.global || {};
+  const selectedLanguage = resolveLanguage(language || globalConfig.language || 'pt');
   const includeSeedByEnv = parseBoolean(process.env.MIGRATIONS_INCLUDE_SOURCE_DATA, false);
   const shouldIncludeSourceData =
     (typeof globalConfig.migrations === 'object' &&
@@ -627,6 +670,7 @@ async function generate(options = {}) {
   console.log(`Saida: ${outputDir}`);
   console.log(`Banco: ${dbConfigPath}`);
   console.log(`Config: ${configPath}`);
+  console.log(`Idioma: ${selectedLanguage}`);
   console.log(`Prefer env credentials: ${preferEnvCredentials ? 'enabled' : 'disabled'}`);
   console.log(
     `Modo: ${useSingleApi ? 'API única (múltiplos bancos combinados)' : separateApis ? 'APIs separadas por banco' : 'API única'}`,
@@ -643,6 +687,7 @@ async function generate(options = {}) {
       globalConfig,
       shouldIncludeSourceData,
       shouldAutoInstallAndFormat,
+      language: selectedLanguage,
     });
   } else {
     await generateSeparateApis({
@@ -653,6 +698,7 @@ async function generate(options = {}) {
       globalConfig,
       shouldIncludeSourceData,
       shouldAutoInstallAndFormat,
+      language: selectedLanguage,
     });
   }
 }
@@ -665,6 +711,7 @@ async function generateSingleApi({
   globalConfig,
   shouldIncludeSourceData,
   shouldAutoInstallAndFormat,
+  language,
 }) {
   const mergedTablesConfig = {};
   const mergedSchema = {};
@@ -711,7 +758,14 @@ async function generateSingleApi({
   const engine = new GeneratorEngine(staticIntrospector);
 
   addLayerGenerators(engine, outputDir, mergedTablesConfig);
-  addStaticGenerators(engine, outputDir, enabledTables, tableDatabaseMap, generatedEnvFileContent);
+  addStaticGenerators(
+    engine,
+    outputDir,
+    enabledTables,
+    tableDatabaseMap,
+    generatedEnvFileContent,
+    language,
+  );
   addOptionalGenerators(
     engine,
     outputDir,
@@ -745,6 +799,7 @@ async function generateSeparateApis({
   globalConfig,
   shouldIncludeSourceData,
   shouldAutoInstallAndFormat,
+  language,
 }) {
   for (const [databaseKey, databaseSettings] of enabledDatabaseEntries) {
     const dbConfig = dbConfigBundle.databases[databaseKey];
@@ -790,6 +845,7 @@ async function generateSeparateApis({
       enabledTables,
       tableDatabaseMap,
       generatedEnvFileContent,
+      language,
     );
     addOptionalGenerators(
       engine,

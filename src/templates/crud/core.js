@@ -593,247 +593,28 @@ module.exports = new ${className}Repository();
         )
         .map((col) => col.name),
     );
-    const columnUnionType = schema.columns.length
-      ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
-      : 'string';
-
     return `
 /**
  * @fileoverview Camada de serviço para ${tableName}.
- * @description Aplica regras de negócio, validações e paginação.
+ * @description Especialização da BaseCrudService para ${tableName}.
  */
 
 const ${repoName} = require('../repositories/${repoName}');
-const AppError = require('../utils/AppError');
-const { normalizePagination, parseIncludeTotal, MAX_LIMIT } = require('../utils/pagination');
-
-const DEFAULT_LIMIT = 10;
-const ALLOWED_COLUMNS = new Set(${columnsLiteral});
-const STRING_COLUMNS = new Set(${stringColumnsLiteral});
-
-/**
- * Valida se os filtros usam apenas colunas permitidas.
- * @param {Record<string, any>} filters Filtros recebidos.
- * @throws {AppError} 400 quando houver coluna inválida.
- */
-function assertAllowedFilterColumns(filters) {
-    const invalidColumns = Object.keys(filters).filter((column) => !ALLOWED_COLUMNS.has(column));
-    if (invalidColumns.length > 0) {
-        throw new AppError(400, 'Invalid filter columns: ' + invalidColumns.join(', '));
-    }
-}
-
-/**
- * Valida consistência de shape em payload bulk.
- * @param {Array<Record<string, any>>} dataArray Lista de itens.
- * @throws {AppError} 400 quando houver formato inválido.
- */
-function assertUniformBulkShape(dataArray) {
-    const firstKeys = Object.keys(dataArray[0]).sort();
-    for (let i = 0; i < dataArray.length; i++) {
-        const item = dataArray[i];
-        if (!item || typeof item !== 'object' || Array.isArray(item)) {
-            throw new AppError(400, 'Each bulk item must be an object');
-        }
-
-        const currentKeys = Object.keys(item).sort();
-        if (currentKeys.length !== firstKeys.length || currentKeys.some((key, idx) => key !== firstKeys[idx])) {
-            throw new AppError(400, 'All bulk items must have the same shape');
-        }
-    }
-}
+const BaseCrudService = require('../core/BaseCrudService');
 
 /**
  * @class ${className}Service
  * @classdesc Serviço de aplicação para operações de ${tableName}.
  */
-class ${className}Service {
-    /**
-     * Consulta paginada com filtros permitidos.
-     * @param {Record<string, any>} filters Filtros de consulta.
-     * @param {number|string} [page=1] Página.
-     * @param {number|string} [limit=10] Limite por página.
-     * @param {boolean|string} [includeTotal=true] Inclui total.
-     * @returns {Promise<{data:any[], meta:Record<string,any>}>}
-     */
-    async getAll(filters, page = 1, limit = DEFAULT_LIMIT, includeTotal = true) {
-        const normalized = normalizePagination(page, limit);
-        const shouldIncludeTotal = parseIncludeTotal(includeTotal);
-        assertAllowedFilterColumns(filters || {});
-
-        const { data, total } = await ${repoName}.findAll(filters, normalized.page, normalized.limit, shouldIncludeTotal);
-        const totalPages = shouldIncludeTotal ? Math.ceil(total / normalized.limit) : null;
-
-        return {
-            data,
-            meta: {
-                totalItems: total,
-                totalPages,
-                includeTotal: shouldIncludeTotal,
-                currentPage: normalized.page,
-                itemsPerPage: normalized.limit
-            }
-        };
-    }
-
-    /**
-     * Obtém registro por id.
-     * @param {string|number} id Identificador.
-     * @returns {Promise<any>}
-     * @throws {AppError} 404 quando não encontrado.
-     */
-    async getById(id) {
-        const item = await ${repoName}.findById(id);
-        if (!item) throw new AppError(404, '${className} not found');
-        return item;
-    }
-
-    /**
-     * Obtém registro por id com JSON de relacionamentos encadeados.
-     * @param {string|number} id Identificador.
-     * @param {number|string} [depth=1] Profundidade máxima de relacionamento.
-     * @returns {Promise<any>}
-     * @throws {AppError} 404 quando não encontrado.
-     */
-    async getByIdWithRelations(id, depth = 1) {
-        const item = await ${repoName}.findByIdWithRelations(id, depth);
-        if (!item) throw new AppError(404, '${className} not found');
-        return item;
-    }
-
-    /**
-     * Cria registro.
-     * @param {Record<string, any>} data Payload.
-     * @returns {Promise<any>}
-     */
-    async create(data) {
-        return await ${repoName}.create(data);
-    }
-
-    /**
-     * Cria registros em lote.
-     * @param {Array<Record<string, any>>} dataArray Itens de criação.
-     * @returns {Promise<{affectedRows:number}>}
-     */
-    async createBulk(dataArray) {
-        if (!Array.isArray(dataArray) || dataArray.length === 0) {
-            throw new AppError(400, 'Body must be a non-empty array for bulk insert');
-        }
-        assertUniformBulkShape(dataArray);
-        return await ${repoName}.createBulk(dataArray);
-    }
-
-    /**
-     * Atualiza registro por id.
-     * @param {string|number} id Identificador.
-     * @param {Record<string, any>} data Payload.
-     * @returns {Promise<any>}
-     */
-    async update(id, data) {
-        await this.getById(id);
-        return await ${repoName}.update(id, data);
-    }
-
-    /**
-     * Remove registro por id.
-     * @param {string|number} id Identificador.
-     * @returns {Promise<{success:boolean}>}
-     */
-    async delete(id) {
-        await this.getById(id);
-        return await ${repoName}.delete(id);
-    }
-
-    /**
-     * Atualiza múltiplos registros em lote.
-     * @param {Array<Record<string, any>>} dataArray Lista de itens com pk e campos.
-     * @returns {Promise<{affectedRows:number}>}
-     */
-    async updateBulk(dataArray) {
-        if (!Array.isArray(dataArray) || dataArray.length === 0) {
-            throw new AppError(400, 'Body must be a non-empty array for bulk update');
-        }
-        for (let i = 0; i < dataArray.length; i++) {
-            const item = dataArray[i];
-            if (!item || typeof item !== 'object' || Array.isArray(item)) {
-                throw new AppError(400, 'Each bulk item must be an object');
-            }
-            if (item[${JSON.stringify(pk)}] === undefined || item[${JSON.stringify(pk)}] === null) {
-                throw new AppError(400, '${pk} is required in each item for bulk update');
-            }
-        }
-        return await ${repoName}.updateBulk(dataArray);
-    }
-
-    /**
-     * Remove múltiplos registros por lista de ids.
-     * @param {Array<string|number>} ids Lista de chaves primárias.
-     * @returns {Promise<{affectedRows:number}>}
-     */
-    async deleteBulk(ids) {
-        if (!Array.isArray(ids) || ids.length === 0) {
-            throw new AppError(400, 'Body must be a non-empty array of ids for bulk delete');
-        }
-        return await ${repoName}.deleteBulk(ids);
-    }
-
-    /**
-     * Busca lista com projeção fixa de colunas configuradas.
-     * @param {string[]} columns Colunas selecionadas para retorno.
-     * @returns {Promise<any[]>}
-     */
-    async getSelectedColumns(columns) {
-        if (!Array.isArray(columns) || columns.length === 0) {
-            throw new AppError(400, 'Columns config must be a non-empty array');
-        }
-
-        const normalizedColumns = columns
-            .filter((column) => typeof column === 'string' && column.trim())
-            .map((column) => column.trim());
-
-        if (normalizedColumns.length === 0) {
-            throw new AppError(400, 'Columns config must be a non-empty array');
-        }
-
-        const invalidColumns = normalizedColumns.filter((column) => !ALLOWED_COLUMNS.has(column));
-        if (invalidColumns.length > 0) {
-            throw new AppError(400, 'Invalid selected columns: ' + invalidColumns.join(', '));
-        }
-
-        return await ${repoName}.findSelectedColumns(normalizedColumns);
-    }
-
-    /**
-     * Busca por coluna dinâmica com paginação.
-        * @param {${columnUnionType}} columnName Nome da coluna.
-     * @param {string|number} value Valor de busca.
-     * @param {number|string} [page=1] Página.
-     * @param {number|string} [limit=10] Limite.
-     * @param {boolean|string} [includeTotal=true] Inclui total.
-     * @returns {Promise<{data:any[], meta:Record<string,any>}>}
-     */
-    async findByColumnPaginated(columnName, value, page = 1, limit = DEFAULT_LIMIT, includeTotal = true) {
-        if (!ALLOWED_COLUMNS.has(columnName)) {
-            throw new AppError(400, 'Invalid column for search: ' + columnName);
-        }
-
-        const normalized = normalizePagination(page, limit);
-        const shouldIncludeTotal = parseIncludeTotal(includeTotal);
-        const isStringColumn = STRING_COLUMNS.has(columnName);
-
-        const { data, total } = await ${repoName}.findByColumnPaginated(columnName, value, isStringColumn, normalized.page, normalized.limit, shouldIncludeTotal);
-        const totalPages = shouldIncludeTotal ? Math.ceil(total / normalized.limit) : null;
-
-        return {
-            data,
-            meta: {
-                totalItems: total,
-                totalPages,
-                includeTotal: shouldIncludeTotal,
-                currentPage: normalized.page,
-                itemsPerPage: normalized.limit
-            }
-        };
+class ${className}Service extends BaseCrudService {
+    constructor() {
+        super({
+            repository: ${repoName},
+            entityName: '${className}',
+            primaryKey: ${JSON.stringify(pk)},
+            allowedColumns: ${columnsLiteral},
+            stringColumns: ${stringColumnsLiteral},
+        });
     }
 }
 
@@ -844,12 +625,6 @@ module.exports = new ${className}Service();
   controller: (tableName, schema, fullSchema = null, tableConfig = null) => {
     const className = pascalCase(tableName);
     const serviceName = `${camelCase(tableName)}Service`;
-    const columnUnionType = schema.columns.length
-      ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
-      : 'string';
-    const searchableColumnsDoc = schema.columns
-      .map((col) => `     * - \`${col.name}\`: ${col.type}`)
-      .join('\n');
     const customRoutes = Array.isArray(tableConfig?.customRoutes) ? tableConfig.customRoutes : [];
     const normalizedCustomRoutes = customRoutes
       .map((route, index) => {
@@ -889,7 +664,7 @@ module.exports = new ${className}Service();
          */
         async ${route.methodName}(req, res, next) {
                 try {
-                        const data = await ${serviceName}.getSelectedColumns(${JSON.stringify(route.columns)});
+                        const data = await this.service.getSelectedColumns(${JSON.stringify(route.columns)});
                         res.json(data);
                 } catch (error) {
                         next(error);
@@ -897,240 +672,27 @@ module.exports = new ${className}Service();
         }`,
       )
       .join('\n');
+    const customMethodBindings = normalizedCustomRoutes
+      .map((route) => `        this.${route.methodName} = this.${route.methodName}.bind(this);`)
+      .join('\n');
 
     return `
 /**
  * @fileoverview Controller HTTP de ${tableName}.
- * @description Traduz requisição/response HTTP para a camada de serviço.
+ * @description Especialização da BaseCrudController para ${tableName}.
  */
 
 const ${serviceName} = require('../services/${serviceName}');
+const BaseCrudController = require('../core/BaseCrudController');
 
 /**
  * @class ${className}Controller
  * @classdesc Controller REST para recursos ${tableName}.
  */
-class ${className}Controller {
-    /**
-     * GET / - lista com paginação e links HATEOAS.
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async getAll(req, res, next) {
-        try {
-            const { page = 1, limit = 10, includeTotal = 'true', ...filters } = req.query;
-            const result = await ${serviceName}.getAll(filters, page, limit, includeTotal);
-
-            const baseUrl = \`\${req.protocol}://\${req.get('host')}\${req.baseUrl}\`;
-            const queryParams = new URLSearchParams({ ...filters, includeTotal: result.meta.includeTotal });
-
-            result.links = {
-                self: \`\${baseUrl}?page=\${result.meta.currentPage}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`
-            };
-
-            if (result.meta.includeTotal) {
-                result.links.first = \`\${baseUrl}?page=1&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                result.links.last = \`\${baseUrl}?page=\${result.meta.totalPages}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-
-                if (result.meta.currentPage > 1) {
-                    result.links.prev = \`\${baseUrl}?page=\${result.meta.currentPage - 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-                if (result.meta.currentPage < result.meta.totalPages) {
-                    result.links.next = \`\${baseUrl}?page=\${result.meta.currentPage + 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-            } else {
-                if (result.meta.currentPage > 1) {
-                    result.links.prev = \`\${baseUrl}?page=\${result.meta.currentPage - 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-                if (result.data.length === result.meta.itemsPerPage) {
-                    result.links.next = \`\${baseUrl}?page=\${result.meta.currentPage + 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-            }
-
-            res.json(result);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * GET /:id
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async getById(req, res, next) {
-        try {
-            const item = await ${serviceName}.getById(req.params.id);
-            res.json(item);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * GET /:id/relations
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async getByIdWithRelations(req, res, next) {
-        try {
-            const { depth = 1 } = req.query;
-            const item = await ${serviceName}.getByIdWithRelations(req.params.id, depth);
-            res.json(item);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * POST /
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async create(req, res, next) {
-        try {
-            const item = await ${serviceName}.create(req.body);
-            res.status(201).json(item);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * POST /bulk
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async createBulk(req, res, next) {
-        try {
-            const result = await ${serviceName}.createBulk(req.body);
-            res.status(201).json(result);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * PUT /:id
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async update(req, res, next) {
-        try {
-            const item = await ${serviceName}.update(req.params.id, req.body);
-            res.json(item);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * DELETE /:id
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async delete(req, res, next) {
-        try {
-            await ${serviceName}.delete(req.params.id);
-            res.status(204).end();
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * PUT /bulk
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async updateBulk(req, res, next) {
-        try {
-            const result = await ${serviceName}.updateBulk(req.body);
-            res.json(result);
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * DELETE /bulk
-     * @param {import('express').Request} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async deleteBulk(req, res, next) {
-        try {
-            await ${serviceName}.deleteBulk(req.body);
-            res.status(204).end();
-        } catch (error) {
-            next(error);
-        }
-    }
-
-    /**
-     * GET /search/:column/:value
-        *
-        * Colunas suportadas para pesquisa nesta entidade:
-    ${searchableColumnsDoc}
-        *
-        * @param {import('express').Request<{ column: ${columnUnionType}, value: string }>} req
-     * @param {import('express').Response} res
-     * @param {import('express').NextFunction} next
-     * @returns {Promise<void>}
-     */
-    async findByColumn(req, res, next) {
-        try {
-            const { column, value } = req.params;
-            const { page = 1, limit = 10, includeTotal = 'true' } = req.query;
-            const result = await ${serviceName}.findByColumnPaginated(column, value, page, limit, includeTotal);
-
-            const baseUrl = \`\${req.protocol}://\${req.get('host')}\${req.baseUrl}/search/\${column}/\${value}\`;
-            const queryParams = new URLSearchParams({ includeTotal: result.meta.includeTotal });
-            
-            result.links = {
-                self: \`\${baseUrl}?page=\${result.meta.currentPage}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`
-            };
-
-            if (result.meta.includeTotal) {
-                result.links.first = \`\${baseUrl}?page=1&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                result.links.last = \`\${baseUrl}?page=\${result.meta.totalPages}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-
-                if (result.meta.currentPage > 1) {
-                    result.links.prev = \`\${baseUrl}?page=\${result.meta.currentPage - 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-                if (result.meta.currentPage < result.meta.totalPages) {
-                    result.links.next = \`\${baseUrl}?page=\${result.meta.currentPage + 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-            } else {
-                if (result.meta.currentPage > 1) {
-                    result.links.prev = \`\${baseUrl}?page=\${result.meta.currentPage - 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-                if (result.data.length === result.meta.itemsPerPage) {
-                    result.links.next = \`\${baseUrl}?page=\${result.meta.currentPage + 1}&limit=\${result.meta.itemsPerPage}&\${queryParams}\`;
-                }
-            }
-
-            res.json(result);
-        } catch (error) {
-            next(error);
-        }
+class ${className}Controller extends BaseCrudController {
+    constructor() {
+        super({ service: ${serviceName} });
+${customMethodBindings}
     }
 ${customControllerMethods}
 }

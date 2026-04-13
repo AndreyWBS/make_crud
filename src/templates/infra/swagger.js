@@ -76,7 +76,42 @@ module.exports = {
   `;
   },
 
-  app: (tables) => `
+  app: (tables, language = 'pt') => {
+    const appI18n = (() => {
+      const dict = {
+        pt: {
+          badRequest: 'Requisicao Invalida',
+          uriTooLong: 'URI muito longa',
+          tooMany: 'Muitas Requisicoes',
+          forbidden: 'Proibido',
+          notFound: 'Nao Encontrado',
+          tooManyQueryParams: 'Muitos parametros de consulta.',
+          urlTooLong: 'A URL da requisicao e muito longa.',
+          rateLimitExceeded: 'Limite de requisicoes excedido.',
+          sensitiveRateLimitExceeded: 'Limite de requisicoes de rota sensivel excedido.',
+          swaggerAccessDenied: 'Acesso ao Swagger negado.',
+          swaggerNotFound: 'Recurso do Swagger nao encontrado.',
+        },
+        en: {
+          badRequest: 'Bad Request',
+          uriTooLong: 'URI Too Long',
+          tooMany: 'Too Many Requests',
+          forbidden: 'Forbidden',
+          notFound: 'Not Found',
+          tooManyQueryParams: 'Too many query parameters.',
+          urlTooLong: 'Request URL is too long.',
+          rateLimitExceeded: 'Rate limit exceeded.',
+          sensitiveRateLimitExceeded: 'Sensitive route rate limit exceeded.',
+          swaggerAccessDenied: 'Swagger access denied.',
+          swaggerNotFound: 'Swagger resource not found.',
+        },
+      };
+      const norm = String(language || '')
+        .trim()
+        .toLowerCase();
+      return norm === 'pt' || norm === 'pt-br' || norm === 'pt_br' ? dict.pt : dict.en;
+    })();
+    return `
   /**
    * @fileoverview Composição principal da aplicação Express.
    * @description Configura hardening, observabilidade, middlewares e rotas.
@@ -89,7 +124,7 @@ module.exports = {
   const rateLimit = require('express-rate-limit');
   const slowDown = require('express-slow-down');
   const swaggerUi = require('swagger-ui-express');
-  const { fullSpec, resourceSpecs, resources } = require('./docs/swagger/swaggerSpec');
+  const { fullSpec } = require('./docs/swagger/swaggerSpec');
   const env = require('./config/env');
   const authMiddleware = require('./middlewares/authMiddleware');
   const authorize = require('./middlewares/authorizeMiddleware');
@@ -136,8 +171,8 @@ module.exports = {
     if (queryCount > env.API_MAX_QUERY_PARAMS) {
       return res.status(400).json({
         status: 400,
-        error: 'Bad Request',
-        message: 'Too many query parameters.',
+        error: ${JSON.stringify(appI18n.badRequest)},
+        message: ${JSON.stringify(appI18n.tooManyQueryParams)},
         correlationId: req.id,
       });
     }
@@ -145,8 +180,8 @@ module.exports = {
     if ((req.originalUrl || '').length > env.API_MAX_URL_LENGTH) {
       return res.status(414).json({
         status: 414,
-        error: 'URI Too Long',
-        message: 'Request URL is too long.',
+        error: ${JSON.stringify(appI18n.uriTooLong)},
+        message: ${JSON.stringify(appI18n.urlTooLong)},
         correlationId: req.id,
       });
     }
@@ -159,7 +194,7 @@ module.exports = {
     max: env.RATE_LIMIT_MAX,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { status: 429, error: 'Too Many Requests', message: 'Rate limit exceeded.' },
+    message: { status: 429, error: ${JSON.stringify(appI18n.tooMany)}, message: ${JSON.stringify(appI18n.rateLimitExceeded)} },
   });
 
   const sensitiveRateLimit = rateLimit({
@@ -167,7 +202,7 @@ module.exports = {
     max: env.RATE_LIMIT_SENSITIVE_MAX,
     standardHeaders: true,
     legacyHeaders: false,
-    message: { status: 429, error: 'Too Many Requests', message: 'Sensitive route rate limit exceeded.' },
+    message: { status: 429, error: ${JSON.stringify(appI18n.tooMany)}, message: ${JSON.stringify(appI18n.sensitiveRateLimitExceeded)} },
   });
 
   const globalSlowDown = slowDown({
@@ -216,8 +251,8 @@ module.exports = {
       if (!env.SWAGGER_ALLOWED_IPS.includes(clientIp)) {
         return res.status(403).json({
           status: 403,
-          error: 'Forbidden',
-          message: 'Swagger access denied.',
+          error: ${JSON.stringify(appI18n.forbidden)},
+          message: ${JSON.stringify(appI18n.swaggerAccessDenied)},
           correlationId: req.id,
         });
       }
@@ -233,117 +268,12 @@ module.exports = {
       swaggerGuards.push(authMiddleware, authorize({ anyRole: ['admin'] }));
     }
 
-    const swaggerUrls = resources.map((resource) => ({
-      name: resource,
-      url: '/api-docs/' + resource + '.json',
-    }));
-
     app.get('/api-docs.json', ...swaggerGuards, (req, res) => {
       res.setHeader('Content-Type', 'application/json');
       res.send(fullSpec);
     });
 
-    app.get('/api-docs/resources.json', ...swaggerGuards, (req, res) => {
-      const items = resources.map((resource) => ({
-        resource,
-        json: '/api-docs/' + resource + '.json',
-        ui: '/api-docs/ui?urls.primaryName=' + encodeURIComponent(resource),
-      }));
-      res.json({
-        resources: items,
-        segmentedUi: '/api-docs/ui',
-        fullUi: '/api-docs/full',
-        fullJson: '/api-docs.json',
-      });
-    });
-
-    app.get('/api-docs/:resource.json', ...swaggerGuards, (req, res) => {
-      const resource = req.params.resource;
-      const spec = resourceSpecs[resource];
-      if (!spec) {
-        return res.status(404).json({
-          status: 404,
-          error: 'Not Found',
-          message: 'Swagger resource not found.',
-          correlationId: req.id,
-        });
-      }
-
-      res.setHeader('Content-Type', 'application/json');
-      return res.send(spec);
-    });
-
-    app.get('/api-docs', ...swaggerGuards, (req, res) => {
-      const cards = resources
-        .map((resource) => {
-          const uiLink = '/api-docs/ui?urls.primaryName=' + encodeURIComponent(resource);
-          const jsonLink = '/api-docs/' + resource + '.json';
-          return (
-            '<article class="card">' +
-              '<h3>' + resource + '</h3>' +
-              '<p>Documentacao segmentada do recurso <strong>' + resource + '</strong>.</p>' +
-              '<div class="actions">' +
-                '<a class="btn" href="' + uiLink + '">Abrir UI</a>' +
-                '<a class="btn btn-light" href="' + jsonLink + '">JSON</a>' +
-              '</div>' +
-            '</article>'
-          );
-        })
-        .join('');
-
-      return res.send(
-        '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-          '<title>Portal da Documentacao da API</title>' +
-          '<style>' +
-            ':root{--bg:#f4f7fb;--ink:#13203a;--muted:#5a6780;--brand:#165dff;--card:#fff;--line:#dbe3f2;}' +
-            '*{box-sizing:border-box}body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:linear-gradient(180deg,#eef3ff 0,#f8faff 100%);color:var(--ink)}' +
-            '.hero{padding:36px 20px;border-bottom:1px solid var(--line);background:radial-gradient(circle at 20% 10%,#dbe6ff,transparent 35%),radial-gradient(circle at 80% 0,#e9f0ff,transparent 30%)}' +
-            '.wrap{max-width:1100px;margin:0 auto}.hero h1{margin:0 0 8px;font-size:30px}.hero p{margin:0;color:var(--muted)}' +
-            '.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}.btn{display:inline-block;padding:10px 14px;border-radius:10px;background:var(--brand);color:#fff;text-decoration:none;font-weight:600}.btn-light{background:#fff;color:var(--ink);border:1px solid var(--line)}' +
-            '.content{padding:24px 20px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px}' +
-            '.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;box-shadow:0 6px 20px rgba(20,40,80,.05)}' +
-            '.card h3{margin:0 0 8px;font-size:18px}.card p{margin:0 0 12px;color:var(--muted);font-size:14px}.actions{display:flex;gap:8px;flex-wrap:wrap}' +
-          '</style></head><body>' +
-          '<header class="hero"><div class="wrap">' +
-            '<h1>Portal da Documentacao da API</h1>' +
-            '<p>Acesse a documentacao completa ou segmentada por recurso para carregamento mais rapido.</p>' +
-            '<div class="toolbar">' +
-              '<a class="btn" href="/api-docs/ui">Swagger Segmentado (UI)</a>' +
-              '<a class="btn btn-light" href="/api-docs/full">Swagger Completo</a>' +
-              '<a class="btn btn-light" href="/api-docs.json">JSON Completo</a>' +
-            '</div>' +
-          '</div></header>' +
-          '<main class="content"><div class="wrap"><section class="grid">' + cards + '</section></div></main>' +
-          '</body></html>'
-      );
-    });
-
-    app.use('/api-docs/ui', ...swaggerGuards, swaggerUi.serve, swaggerUi.setup(fullSpec, {
-      customSiteTitle: 'Internal API Docs - Segmented',
-      swaggerOptions: {
-        urls: swaggerUrls,
-        docExpansion: 'none',
-      },
-    }));
-
-    app.use('/api-docs/full', ...swaggerGuards, swaggerUi.serveFiles(fullSpec), swaggerUi.setup(fullSpec, {
-      customSiteTitle: 'Internal API Docs - Full',
-    }));
-
-    app.get('/api-docs/:resource', ...swaggerGuards, (req, res) => {
-      const resource = req.params.resource;
-      const spec = resourceSpecs[resource];
-      if (!spec) {
-        return res.status(404).json({
-          status: 404,
-          error: 'Not Found',
-          message: 'Swagger resource not found.',
-          correlationId: req.id,
-        });
-      }
-
-      return res.redirect('/api-docs/ui?urls.primaryName=' + encodeURIComponent(resource));
-    });
+    app.use('/api-docs', ...swaggerGuards, swaggerUi.serve, swaggerUi.setup(fullSpec));
   }
 
   app.use('/docs', express.static(path.join(__dirname, 'docs/html')));
@@ -353,5 +283,6 @@ module.exports = {
   // Tratamento centralizado de erros deve ser o último middleware.
   app.use(errorMiddleware);
   module.exports = app;
-  `,
+  `;
+  },
 };
