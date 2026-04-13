@@ -23,10 +23,18 @@ const DEFAULT_GLOBAL = {
   docs_technical: true,
   tests: true,
   prettier: true,
+  databaseConfig: {
+    preferEnvCredentials: true,
+  },
   migrations: {
     enabled: true,
     includeSourceData: false,
   },
+};
+
+const DEFAULT_DATABASE_OPTIONS = {
+  enabled: true,
+  outputDir: null,
 };
 
 /**
@@ -52,18 +60,113 @@ class ConfigBuilder {
    * @param {Record<string, any>} schema Schema retornado pelo Introspector.
    * @returns {object}
    */
-  buildDefault(schema) {
+  normalizeTableConfig(tableConfig = {}) {
+    return {
+      enabled: tableConfig.enabled !== false,
+      routes: { ...DEFAULT_ROUTES, ...(tableConfig.routes || {}) },
+      customRoutes: Array.isArray(tableConfig.customRoutes) ? tableConfig.customRoutes : [],
+    };
+  }
+
+  buildTables(schema = {}) {
     const tables = {};
     for (const tableName of Object.keys(schema).sort()) {
-      tables[tableName] = {
-        enabled: true,
-        routes: { ...DEFAULT_ROUTES },
-        customRoutes: [],
+      tables[tableName] = this.normalizeTableConfig();
+    }
+    return tables;
+  }
+
+  normalize(existing = {}) {
+    const databaseConfig =
+      typeof existing.global?.databaseConfig === 'object' &&
+      existing.global?.databaseConfig !== null
+        ? {
+            preferEnvCredentials: existing.global.databaseConfig.preferEnvCredentials !== false,
+          }
+        : existing.global?.databaseConfig === false
+          ? { preferEnvCredentials: false }
+          : { ...DEFAULT_GLOBAL.databaseConfig };
+
+    const global = {
+      ...DEFAULT_GLOBAL,
+      ...(existing.global || {}),
+      databaseConfig,
+      migrations:
+        typeof existing.global?.migrations === 'object' && existing.global?.migrations !== null
+          ? {
+              enabled: existing.global.migrations.enabled !== false,
+              includeSourceData: existing.global.migrations.includeSourceData === true,
+            }
+          : existing.global?.migrations === false
+            ? { enabled: false, includeSourceData: false }
+            : { ...DEFAULT_GLOBAL.migrations },
+    };
+
+    if (existing.databases && typeof existing.databases === 'object') {
+      const databases = Object.fromEntries(
+        Object.entries(existing.databases).map(([databaseKey, databaseConfig]) => [
+          databaseKey,
+          {
+            ...DEFAULT_DATABASE_OPTIONS,
+            ...(databaseConfig || {}),
+            enabled: databaseConfig?.enabled !== false,
+            outputDir:
+              typeof databaseConfig?.outputDir === 'string' && databaseConfig.outputDir.trim()
+                ? databaseConfig.outputDir.trim()
+                : null,
+            tables: Object.fromEntries(
+              Object.entries(databaseConfig?.tables || {}).map(([tableName, tableConfig]) => [
+                tableName,
+                this.normalizeTableConfig(tableConfig),
+              ]),
+            ),
+          },
+        ]),
+      );
+
+      return {
+        global,
+        defaultDatabase: existing.defaultDatabase || Object.keys(databases)[0] || 'default',
+        databases,
       };
     }
+
+    return {
+      global,
+      defaultDatabase: existing.defaultDatabase || 'default',
+      databases: {
+        default: {
+          ...DEFAULT_DATABASE_OPTIONS,
+          tables: Object.fromEntries(
+            Object.entries(existing.tables || {}).map(([tableName, tableConfig]) => [
+              tableName,
+              this.normalizeTableConfig(tableConfig),
+            ]),
+          ),
+        },
+      },
+    };
+  }
+
+  buildDefault(schema, databaseKey = 'default') {
+    return this.buildDefaultFromSchemas({ [databaseKey]: schema }, databaseKey);
+  }
+
+  buildDefaultFromSchemas(schemasByDatabase = {}, defaultDatabase = 'default') {
+    const databases = Object.fromEntries(
+      Object.entries(schemasByDatabase).map(([databaseKey, schema]) => [
+        databaseKey,
+        {
+          ...DEFAULT_DATABASE_OPTIONS,
+          tables: this.buildTables(schema),
+        },
+      ]),
+    );
+
     return {
       global: { ...DEFAULT_GLOBAL },
-      tables,
+      defaultDatabase,
+      databases,
     };
   }
 
@@ -76,42 +179,57 @@ class ConfigBuilder {
    * @param {Record<string, any>} schema Schema do banco.
    * @returns {object}
    */
-  merge(existing, schema) {
-    const existingMigrations = existing.global?.migrations;
-    const normalizedMigrations =
-      typeof existingMigrations === 'object' && existingMigrations !== null
-        ? {
-            enabled: existingMigrations.enabled !== false,
-            includeSourceData: existingMigrations.includeSourceData === true,
-          }
-        : existingMigrations === false
-          ? { enabled: false, includeSourceData: false }
-          : { ...DEFAULT_GLOBAL.migrations };
+  merge(existing, schema, defaultDatabase = 'default') {
+    if (!schema || schema.columns) {
+      return this.mergeSchemas(existing, { [defaultDatabase]: schema }, defaultDatabase);
+    }
 
+    return this.mergeSchemas(existing, schema, defaultDatabase);
+  }
+
+  mergeSchemas(existing, schemasByDatabase = {}, defaultDatabase = 'default') {
+    const normalizedExisting = this.normalize(existing);
     const merged = {
-      global: {
-        ...DEFAULT_GLOBAL,
-        ...(existing.global || {}),
-        migrations: normalizedMigrations,
-      },
-      tables: {},
+      global: normalizedExisting.global,
+      defaultDatabase: normalizedExisting.defaultDatabase || defaultDatabase,
+      databases: {},
     };
 
-    for (const tableName of Object.keys(schema).sort()) {
-      const existingTable = (existing.tables || {})[tableName];
-      if (existingTable) {
-        merged.tables[tableName] = {
-          enabled: existingTable.enabled !== false,
-          routes: { ...DEFAULT_ROUTES, ...(existingTable.routes || {}) },
-          customRoutes: Array.isArray(existingTable.customRoutes) ? existingTable.customRoutes : [],
-        };
-      } else {
-        merged.tables[tableName] = {
-          enabled: true,
-          routes: { ...DEFAULT_ROUTES },
-          customRoutes: [],
-        };
+    const databaseKeys = new Set([
+      ...Object.keys(normalizedExisting.databases || {}),
+      ...Object.keys(schemasByDatabase || {}),
+    ]);
+
+    for (const databaseKey of Array.from(databaseKeys).sort()) {
+      const existingDatabase = normalizedExisting.databases?.[databaseKey] || null;
+      const schema = schemasByDatabase?.[databaseKey] || null;
+
+      if (!schema && existingDatabase) {
+        merged.databases[databaseKey] = existingDatabase;
+        continue;
       }
+
+      const existingTables = existingDatabase?.tables || {};
+      const tables = {};
+
+      for (const tableName of Object.keys(schema || {}).sort()) {
+        tables[tableName] = this.normalizeTableConfig(existingTables[tableName]);
+      }
+
+      merged.databases[databaseKey] = {
+        ...DEFAULT_DATABASE_OPTIONS,
+        ...(existingDatabase || {}),
+        enabled: existingDatabase?.enabled !== false,
+        outputDir:
+          typeof existingDatabase?.outputDir === 'string' && existingDatabase.outputDir.trim()
+            ? existingDatabase.outputDir.trim()
+            : null,
+        tables,
+      };
+    }
+
+    if (!merged.databases[merged.defaultDatabase]) {
+      merged.defaultDatabase = Object.keys(merged.databases)[0] || defaultDatabase;
     }
 
     return merged;
@@ -123,7 +241,8 @@ class ConfigBuilder {
    */
   async load() {
     if (await fs.pathExists(this.configPath)) {
-      return fs.readJson(this.configPath);
+      const config = await fs.readJson(this.configPath);
+      return this.normalize(config);
     }
     return null;
   }
@@ -135,7 +254,7 @@ class ConfigBuilder {
    */
   async save(config) {
     await fs.ensureDir(path.dirname(this.configPath));
-    await fs.writeJson(this.configPath, config, { spaces: 2 });
+    await fs.writeJson(this.configPath, this.normalize(config), { spaces: 2 });
   }
 }
 

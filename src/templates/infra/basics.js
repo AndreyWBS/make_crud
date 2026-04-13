@@ -352,6 +352,8 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
           dev: 'nodemon src/server.js',
           migrate: 'node src/scripts/migrate.js',
           'migrate:with-seed': 'node src/scripts/migrate.js --with-seed',
+          'migrate:dry-run': 'node src/scripts/migrate.js --dry-run',
+          'seed:new': 'node src/scripts/create-seed.js',
           test: 'jest --runInBand --detectOpenHandles',
           'test:watch': 'jest --watch',
           'test:integration': 'jest tests/integration --runInBand',
@@ -882,19 +884,104 @@ function resolveDbConfig() {
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD || '',
     port: Number(process.env.DB_PORT || 3306),
-    multipleStatements: true,
   };
 }
 
-async function runSqlFile(connection, filePath, dbName) {
+function splitSqlStatements(sql) {
+  return sql
+    .split(/;\\s*\\n/g)
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+}
+
+function isIgnorableMigrationError(error, statement) {
+  if (!error) return false;
+
+  // Reexecução segura: ignora apenas conflitos de objetos já existentes.
+  const ignorableCodes = new Set([
+    'ER_TABLE_EXISTS_ERROR',
+    'ER_DUP_KEYNAME',
+    'ER_FK_DUP_NAME',
+    'ER_CANT_CREATE_TABLE',
+  ]);
+
+  if (ignorableCodes.has(error.code)) return true;
+
+  const msg = String(error.message || '').toLowerCase();
+  if (statement.startsWith('ALTER TABLE') && msg.includes('duplicate foreign key constraint name')) {
+    return true;
+  }
+  if (statement.startsWith('ALTER TABLE') && msg.includes('duplicate key name')) {
+    return true;
+  }
+
+  return false;
+}
+
+async function runSqlFile(connection, filePath, dbName, { continueOnConflict = false } = {}) {
   const rawSql = fs.readFileSync(filePath, 'utf8');
   const sql = rawSql.replace(/__DB_NAME__/g, dbName);
   if (!sql.trim()) return;
-  await connection.query(sql);
+
+  const statements = splitSqlStatements(sql);
+  for (const statement of statements) {
+    try {
+      await connection.query(statement);
+    } catch (error) {
+      if (continueOnConflict && isIgnorableMigrationError(error, statement)) {
+        console.warn('Skipping already-applied statement:', error.code || error.message);
+        continue;
+      }
+      throw error;
+    }
+  }
+}
+
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const withSeed = args.includes('--with-seed');
+  const dryRun = args.includes('--dry-run');
+  const seedFilter = args.find((arg) => !arg.startsWith('--')) || null;
+  return { withSeed, dryRun, seedFilter };
+}
+
+function listSeedFiles(migrationDir) {
+  if (!fs.existsSync(migrationDir)) return [];
+
+  return fs
+    .readdirSync(migrationDir)
+    .filter((file) => file.toLowerCase().endsWith('.sql'))
+    .filter((file) => file !== '001_schema.sql')
+    .filter((file) => file.toLowerCase().includes('seed'))
+    .sort();
+}
+
+function printDryRun(schemaFile, seedFiles, withSeed, seedFilter) {
+  console.log('DRY RUN: no SQL was executed.');
+  console.log('Schema file:', schemaFile);
+
+  if (!withSeed) {
+    console.log('Seed execution: disabled');
+    return;
+  }
+
+  if (seedFilter) {
+    console.log('Seed filter:', seedFilter);
+  }
+
+  if (seedFiles.length === 0) {
+    console.log('No seed files selected.');
+    return;
+  }
+
+  console.log('Seed files to execute:');
+  for (const file of seedFiles) {
+    console.log('-', file);
+  }
 }
 
 async function main() {
-  const withSeed = process.argv.includes('--with-seed');
+  const { withSeed, dryRun, seedFilter } = parseArgs();
   const dbName = process.env.DB_NAME;
   if (!dbName) {
     throw new Error('DB_NAME is required in .env');
@@ -902,19 +989,30 @@ async function main() {
 
   const migrationDir = path.join(__dirname, '../../migrations');
   const schemaFile = path.join(migrationDir, '001_schema.sql');
-  const seedFile = path.join(migrationDir, '002_seed.sql');
+  const allSeedFiles = listSeedFiles(migrationDir);
+  const selectedSeedFiles = seedFilter
+    ? allSeedFiles.filter((file) => file.includes(seedFilter))
+    : allSeedFiles;
+
+  if (dryRun) {
+    printDryRun(schemaFile, selectedSeedFiles, withSeed, seedFilter);
+    return;
+  }
 
   const connection = await mysql.createConnection(resolveDbConfig());
   try {
     console.log('Applying schema migration...');
-    await runSqlFile(connection, schemaFile, dbName);
+    await runSqlFile(connection, schemaFile, dbName, { continueOnConflict: true });
 
     if (withSeed) {
-      if (fs.existsSync(seedFile)) {
+      if (selectedSeedFiles.length > 0) {
         console.log('Applying seed migration...');
-        await runSqlFile(connection, seedFile, dbName);
+        for (const seedFileName of selectedSeedFiles) {
+          const seedFile = path.join(migrationDir, seedFileName);
+          await runSqlFile(connection, seedFile, dbName);
+        }
       } else {
-        console.log('Seed file not found, skipping.');
+        console.log('No seed files found for execution, skipping.');
       }
     }
 
@@ -928,6 +1026,76 @@ main().catch((error) => {
   console.error(error.message);
   process.exit(1);
 });
+`,
+
+  createSeedScript: () => `
+const fs = require('fs');
+const path = require('path');
+
+function slugify(value) {
+  return String(value || 'custom')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'custom';
+}
+
+function nextMigrationPrefix(migrationDir) {
+  if (!fs.existsSync(migrationDir)) {
+    return '003';
+  }
+
+  const files = fs.readdirSync(migrationDir).filter((file) => file.endsWith('.sql'));
+  let maxPrefix = 0;
+
+  for (const file of files) {
+    const match = file.match(/^(\\d+)_/);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value > maxPrefix) {
+      maxPrefix = value;
+    }
+  }
+
+  return String(maxPrefix + 1).padStart(3, '0');
+}
+
+function buildSeedTemplate(name) {
+  return [
+    '-- Generated seed file',
+    '-- Update statements below as needed',
+    'USE \`__DB_NAME__\`;',
+    '',
+    '-- Example:',
+    '-- INSERT INTO your_table (column_a, column_b) VALUES (\\'value_a\\', \\'value_b\\');',
+    '',
+  ].join('\\n');
+}
+
+function main() {
+  const seedNameArg = process.argv.slice(2).find((arg) => !arg.startsWith('--')) || 'custom';
+  const seedName = slugify(seedNameArg);
+  const migrationDir = path.join(__dirname, '../../migrations');
+  fs.mkdirSync(migrationDir, { recursive: true });
+
+  const prefix = nextMigrationPrefix(migrationDir);
+  const fileName = prefix + '_' + seedName + '_seed.sql';
+  const targetFile = path.join(migrationDir, fileName);
+
+  if (fs.existsSync(targetFile)) {
+    throw new Error('Seed file already exists: ' + fileName);
+  }
+
+  fs.writeFileSync(targetFile, buildSeedTemplate(seedName), 'utf8');
+  console.log('Seed file created:', fileName);
+}
+
+try {
+  main();
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 `,
 
   prettierConfigFile: () => `/** @type {import('prettier').Config} */

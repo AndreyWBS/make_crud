@@ -156,9 +156,29 @@ npm run migrate
 
 ### Estrutura + dados iniciais
 
-Executa schema e seed:
+Executa schema e todas as seeds encontradas em migrations:
 
 npm run migrate:with-seed
+
+### Estrutura + seed específica
+
+Executa schema e apenas seeds cujo nome contenha o filtro informado:
+
+npm run migrate:with-seed 002
+
+### Simulação (sem executar SQL)
+
+Mostra o que seria aplicado:
+
+npm run migrate:dry-run
+
+## Criar nova seed
+
+Cria um novo arquivo incremental em migrations:
+
+npm run seed:new nome_da_seed
+
+Exemplo de saída: 003_nome_da_seed_seed.sql
 
 ## Pré-requisitos
 

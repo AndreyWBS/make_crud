@@ -1,89 +1,263 @@
-# MySQL Layered CRUD Generator
+# gerador-crud
 
-Este é um gerador de código Node.js que analisa seu banco de dados MySQL e gera uma API completa seguindo a arquitetura em camadas e princípios SOLID.
+Gerador CLI para criar APIs CRUD em Node.js a partir de bancos MySQL, com arquitetura em camadas, documentacao, testes e migracoes.
 
-## Estrutura Gerada no `/dist`
+## Instalacao global
 
-O projeto gerado segue esta estrutura:
+```bash
+npm install -g gerador-crud
+```
 
-- `src/config`: Configurações de banco e ambiente.
-- `src/controllers`: Camada de entrada (HTTP).
-- `src/services`: Camada de lógica de negócio.
-- `src/repositories`: Camada de acesso a dados (MySQL2 puro).
-- `src/models`: Estruturas de dados.
-- `src/routes`: Definição de endpoints.
-- `src/middlewares`: Autenticação JWT, autorização RBAC por papel/escopo, correlação de requests e tratamento de erros.
-- `src/docs/html`: Documentação HTML por entidade.
-- `src/docs/swagger`: Especificação OpenAPI usada pelo Swagger UI.
-- `src/utils`: Utilitários como logger.
-- `tests`: Base de testes automatizados (Jest + Supertest) com matriz de cobertura CRUD, segurança e contrato.
-- `migrations`: Scripts SQL para criar estrutura e seed opcional.
-- `src/scripts/migrate.js`: Runner para aplicar migrações no ambiente alvo.
+## Fluxo basico
 
-## Como usar o Gerador
+1. Crie uma pasta para guardar os arquivos de entrada do gerador.
+2. Adicione um arquivo `.env` nessa pasta com as credenciais do banco.
+3. Rode `gerador-crud --init` para criar ou atualizar primeiro o `db.config.json` e depois o `api.config.json`.
+4. Ajuste o `db.config.json` e o `api.config.json`.
+5. Rode `gerador-crud` para gerar o projeto.
 
-1. Configure o arquivo `.env` na pasta do gerador com as credenciais do seu banco.
-2. Execute `npm install`.
-3. Execute `node index.js`.
-4. O código completo será gerado na pasta `/dist`.
+Por padrao:
 
-## Como usar o Projeto Gerado
+- entrada: diretorio atual
+- saida: `dist` dentro do diretorio atual
+- banco: `db.config.json` dentro do diretorio de entrada
+- config: `api.config.json` dentro do diretorio de entrada
+- env: `.env` dentro do diretorio de entrada
 
-1. Entre na pasta `/dist`.
-2. Execute `npm install`.
-3. Configure o `.env` gerado.
-4. Execute `npm start`.
-5. Em ambiente local, acesse Swagger em `/api-docs` (exemplo: `http://localhost:3000/api-docs`).
-6. Em produção, Swagger fica desabilitado por padrão (ou protegido por admin + allowlist de IP quando habilitado).
-7. Se quiser consumir o OpenAPI em JSON, use `/api-docs.json` quando Swagger estiver habilitado.
+## Flags da CLI
 
-## Migrações (estrutura e dados)
+```bash
+gerador-crud --init
+gerador-crud --input ./meu-projeto
+gerador-crud --input ./entrada --output ./saida
+gerador-crud --input ./entrada --db-config ./configs/db.config.json
+gerador-crud --input ./entrada --config ./configs/api.config.json --env ./configs/.env
+```
 
-O projeto gerado inclui migrações para facilitar subir a API em outra máquina.
+Flags suportadas:
 
-- `migrations/001_schema.sql`: cria banco (se não existir), tabelas e FKs.
-- `migrations/002_seed.sql`: seed opcional de dados.
-- `src/scripts/migrate.js`: aplica migrações via Node + MySQL2.
+- `--input`, `-i`: diretorio de entrada
+- `--output`, `-o`: diretorio onde os projetos gerados serao salvos
+- `--db-config`, `-b`: caminho do JSON com as conexoes dos bancos
+- `--config`, `-c`: caminho do `api.config.json`
+- `--env`, `-e`: caminho do arquivo `.env`
+- `--dir`, `-d`: alias legado para `--input`
+- `--init`: introspecta os bancos e cria ou atualiza os arquivos de configuracao
 
-Comandos no projeto gerado:
+## Ordem de criacao dos arquivos
 
-- `npm run migrate`: aplica apenas estrutura.
-- `npm run migrate:with-seed`: aplica estrutura e seed.
+Ao rodar `gerador-crud --init`, a CLI executa nesta ordem:
 
-Configuração no `api.config.json` do gerador:
+1. cria ou atualiza o `db.config.json`
+2. introspecta todos os bancos configurados nesse arquivo
+3. cria ou atualiza o `api.config.json`
+
+## Exemplo de db.config.json com um banco
 
 ```json
 {
-	"global": {
-		"migrations": {
-			"enabled": true,
-			"includeSourceData": false
-		}
-	}
+  "defaultDatabase": "default",
+  "databases": {
+    "default": {
+      "host": "localhost",
+      "user": "root",
+      "password": "sua_senha",
+      "database": "meu_banco",
+      "port": 3306
+    }
+  }
 }
 ```
 
-Quando `includeSourceData=true`, o gerador exporta dados da base de origem para montar o seed SQL.
+## Exemplo de db.config.json com varios bancos
 
-## Baseline de Segurança Gerado
+```json
+{
+  "defaultDatabase": "core",
+  "databases": {
+    "core": {
+      "host": "localhost",
+      "user": "root",
+      "password": "senha_core",
+      "database": "core_db",
+      "port": 3306
+    },
+    "audit": {
+      "host": "localhost",
+      "user": "root",
+      "password": "senha_audit",
+      "database": "audit_db",
+      "port": 3306
+    }
+  }
+}
+```
 
-Toda API gerada já inclui controles genéricos reutilizáveis:
+## Exemplo de api.config.json com varios bancos
 
-- JWT sem fallback inseguro e validação de claims (`iss`, `aud`, `sub`, `exp`, `iat`).
-- Algoritmos JWT permitidos explicitamente (`JWT_ALGORITHMS`) e suporte a rotação por `kid` (`JWT_KEYS`, `JWT_ACTIVE_KID`).
-- RBAC básico por rota com papéis (`admin`, `operator`, `read_only`) e escopos (`resource:read|write|delete`).
-- Rate limit global, rate limit para rotas sensíveis e proteção de burst (slow down).
-- Hardening HTTP com `helmet`, CORS por allowlist e `x-powered-by` desabilitado.
-- Limites de payload JSON, query params e tamanho de URL.
-- Correlation ID em request/response e logs estruturados com redação de dados sensíveis.
+```json
+{
+  "global": {
+    "swagger": true,
+    "docs_md": true,
+    "docs_html": true,
+    "docs_technical": true,
+    "tests": true,
+    "prettier": true,
+    "databaseConfig": {
+      "preferEnvCredentials": true
+    },
+    "migrations": {
+      "enabled": true,
+      "includeSourceData": false
+    }
+  },
+  "defaultDatabase": "core",
+  "databases": {
+    "core": {
+      "enabled": true,
+      "outputDir": "core",
+      "tables": {
+        "users": {
+          "enabled": true,
+          "routes": {
+            "getAll": true,
+            "getById": true,
+            "getByIdWithRelations": true,
+            "create": true,
+            "createBulk": true,
+            "update": true,
+            "updateBulk": true,
+            "delete": true,
+            "deleteBulk": true,
+            "search": true
+          },
+          "customRoutes": []
+        }
+      }
+    },
+    "audit": {
+      "enabled": true,
+      "outputDir": "audit",
+      "tables": {
+        "logs": {
+          "enabled": true,
+          "routes": {
+            "getAll": true,
+            "getById": true,
+            "getByIdWithRelations": true,
+            "create": true,
+            "createBulk": true,
+            "update": true,
+            "updateBulk": true,
+            "delete": true,
+            "deleteBulk": true,
+            "search": true
+          },
+          "customRoutes": []
+        }
+      }
+    }
+  }
+}
+```
 
-### Variáveis importantes do `.env` gerado
+## Como funciona a geracao multi-banco
 
-- `JWT_SECRET` (obrigatória, mínimo forte em produção)
-- `JWT_ISSUER`, `JWT_AUDIENCE`, `JWT_ALGORITHMS`, `JWT_ACCESS_MAX_AGE`
-- `JWT_KEYS`, `JWT_ACTIVE_KID` (opcional para rotação)
-- `CORS_ALLOWED_ORIGINS`
-- `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`, `RATE_LIMIT_SENSITIVE_MAX`
-- `SLOW_DOWN_WINDOW_MS`, `SLOW_DOWN_DELAY_AFTER`, `SLOW_DOWN_DELAY_MS`
-- `API_JSON_LIMIT`, `API_MAX_QUERY_PARAMS`, `API_MAX_URL_LENGTH`
-- `SWAGGER_ENABLED`, `SWAGGER_REQUIRE_ADMIN`, `SWAGGER_ALLOWED_IPS`
+- cada banco configurado em `db.config.json` e introspectado no `--init`
+- cada banco aparece em `api.config.json` dentro de `databases`
+- cada banco habilitado gera um projeto separado na saida
+- se houver mais de um banco habilitado, o gerador cria uma subpasta por banco dentro de `dist`
+- se houver apenas um banco habilitado, o projeto continua sendo gerado diretamente em `dist`
+
+## Flag para credenciais do .env
+
+No `api.config.json`, a flag abaixo controla a prioridade entre `.env` e `db.config.json`:
+
+```json
+{
+  "global": {
+    "databaseConfig": {
+      "preferEnvCredentials": true
+    }
+  }
+}
+```
+
+Comportamento:
+
+- `true`: os valores vindos do `.env` sempre sobrescrevem os do `db.config.json`
+- `false`: o `db.config.json` tem prioridade e o `.env` nao sobrescreve os valores existentes
+
+O padrao agora e `true`.
+
+## Exemplo de uso com varios bancos
+
+```bash
+gerador-crud --input ./generator-config --output ./apps --init
+gerador-crud --input ./generator-config --output ./apps
+```
+
+Nesse cenario:
+
+- a CLI le `.env`, `db.config.json` e `api.config.json` em `./generator-config`
+- se `core` e `audit` estiverem habilitados, o resultado sera algo como:
+  - `./apps/core`
+  - `./apps/audit`
+
+## Exemplo de .env
+
+```env
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=sua_senha
+DB_NAME=meu_banco
+DB_PORT=3306
+AUTO_INSTALL_AND_FORMAT=true
+MIGRATIONS_INCLUDE_SOURCE_DATA=false
+DEBUG=false
+```
+
+Observacao:
+
+- o `.env` pode sobrescrever as credenciais do `db.config.json` quando `global.databaseConfig.preferEnvCredentials=true`
+- para varios bancos, o arquivo principal passa a ser o `db.config.json`
+
+## Estrutura do projeto gerado
+
+- `src/config`
+- `src/controllers`
+- `src/services`
+- `src/repositories`
+- `src/models`
+- `src/routes`
+- `src/middlewares`
+- `src/docs`
+- `tests`
+- `migrations`
+- `api-client`
+
+## Migracoes
+
+Quando habilitadas no `api.config.json`, cada projeto gerado inclui:
+
+- `migrations/001_schema.sql`
+- `migrations/002_seed.sql`
+- `src/scripts/migrate.js`
+- `src/scripts/create-seed.js`
+
+Comandos no projeto gerado:
+
+```bash
+npm run migrate
+npm run migrate:with-seed
+npm run migrate:with-seed 002
+npm run migrate:dry-run
+npm run seed:new nome_da_seed
+```
+
+## Observacoes
+
+- o diretorio de saida base e limpo antes de uma nova geracao
+- a instalacao de dependencias roda em cada projeto gerado
+- se `AUTO_INSTALL_AND_FORMAT=false`, o gerador apenas escreve os arquivos
