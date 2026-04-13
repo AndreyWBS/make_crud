@@ -505,14 +505,125 @@ async function generate(options = {}) {
     throw new Error('No enabled databases found in api.config.json.');
   }
 
+  const separateApis = globalConfig.separateApis === true;
+  const useSingleApi = !separateApis && enabledDatabaseEntries.length > 1;
+
   console.log(`Entrada: ${inputDir}`);
   console.log(`Saida: ${outputDir}`);
   console.log(`Banco: ${dbConfigPath}`);
   console.log(`Config: ${configPath}`);
   console.log(`Prefer env credentials: ${preferEnvCredentials ? 'enabled' : 'disabled'}`);
+  console.log(
+    `Modo: ${useSingleApi ? 'API única (múltiplos bancos combinados)' : separateApis ? 'APIs separadas por banco' : 'API única'}`,
+  );
 
   await fs.emptyDir(outputDir);
 
+  if (useSingleApi) {
+    await generateSingleApi({
+      enabledDatabaseEntries,
+      dbConfigBundle,
+      dbConfigPath,
+      outputDir,
+      globalConfig,
+      shouldIncludeSourceData,
+      shouldAutoInstallAndFormat,
+    });
+  } else {
+    await generateSeparateApis({
+      enabledDatabaseEntries,
+      dbConfigBundle,
+      dbConfigPath,
+      outputDir,
+      globalConfig,
+      shouldIncludeSourceData,
+      shouldAutoInstallAndFormat,
+    });
+  }
+}
+
+async function generateSingleApi({
+  enabledDatabaseEntries,
+  dbConfigBundle,
+  dbConfigPath,
+  outputDir,
+  globalConfig,
+  shouldIncludeSourceData,
+  shouldAutoInstallAndFormat,
+}) {
+  const mergedTablesConfig = {};
+  const mergedSchema = {};
+  const mergedSeedSnapshot = {};
+
+  for (const [databaseKey, databaseSettings] of enabledDatabaseEntries) {
+    const dbConfig = dbConfigBundle.databases[databaseKey];
+    if (!dbConfig) {
+      throw new Error(
+        `Database '${databaseKey}' is enabled in api.config.json but missing in ${dbConfigPath}.`,
+      );
+    }
+    ensureDatabaseName(dbConfig, `${dbConfigPath} (${databaseKey})`);
+
+    const tablesConfig = databaseSettings.tables || {};
+    Object.assign(mergedTablesConfig, tablesConfig);
+
+    const introspector = new Introspector(dbConfig);
+    console.log(`Introspectando banco '${databaseKey}'...`);
+    const schema = await introspector.getSchema();
+    Object.assign(mergedSchema, schema);
+
+    if (shouldIncludeSourceData) {
+      const enabledTableNames = Object.keys(tablesConfig).filter(
+        (t) => tablesConfig[t]?.enabled !== false,
+      );
+      if (enabledTableNames.length > 0) {
+        console.log(`Exportando dados de '${databaseKey}'...`);
+        const snap = await introspector.getDataSnapshot(enabledTableNames);
+        Object.assign(mergedSeedSnapshot, snap);
+      }
+    }
+  }
+
+  const enabledTables = (tableName) => mergedTablesConfig[tableName]?.enabled !== false;
+  const staticIntrospector = { getSchema: async () => mergedSchema };
+  const engine = new GeneratorEngine(staticIntrospector);
+
+  addLayerGenerators(engine, outputDir, mergedTablesConfig);
+  addStaticGenerators(engine, outputDir, enabledTables);
+  addOptionalGenerators(
+    engine,
+    outputDir,
+    mergedTablesConfig,
+    globalConfig,
+    enabledTables,
+    mergedSeedSnapshot,
+  );
+
+  await engine.run();
+
+  if (!shouldAutoInstallAndFormat) {
+    console.log('AUTO_INSTALL_AND_FORMAT=false: skipping npm install and npm run format.');
+    return;
+  }
+
+  console.log('Installing dependencies...');
+  execSync('npm install', { cwd: outputDir, stdio: 'inherit', shell: true });
+
+  if (globalConfig.prettier !== false) {
+    console.log('Formatting generated API...');
+    execSync('npm run format', { cwd: outputDir, stdio: 'inherit', shell: true });
+  }
+}
+
+async function generateSeparateApis({
+  enabledDatabaseEntries,
+  dbConfigBundle,
+  dbConfigPath,
+  outputDir,
+  globalConfig,
+  shouldIncludeSourceData,
+  shouldAutoInstallAndFormat,
+}) {
   for (const [databaseKey, databaseSettings] of enabledDatabaseEntries) {
     const dbConfig = dbConfigBundle.databases[databaseKey];
     if (!dbConfig) {

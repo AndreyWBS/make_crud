@@ -23,6 +23,7 @@ const DEFAULT_GLOBAL = {
   docs_technical: true,
   tests: true,
   prettier: true,
+  separateApis: false,
   databaseConfig: {
     preferEnvCredentials: true,
   },
