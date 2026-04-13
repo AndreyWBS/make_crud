@@ -105,7 +105,7 @@ module.exports = ${className};
  * @description Executa queries parametrizadas com timeout e logs estruturados.
  */
 
-const pool = require('../config/database');
+const { getPoolForTable } = require('../config/database');
 const logger = require('../utils/logger');
 
 const QUERY_TIMEOUT_MS = Number(process.env.DB_QUERY_TIMEOUT_MS) || 10000;
@@ -119,6 +119,7 @@ const FILTERABLE_COLUMNS = new Set(${filterableColumns});
 const INSERTABLE_COLUMNS = new Set(${insertableColumns});
 const UPDATABLE_COLUMNS = new Set(${updatableColumns});
 const ROOT_TABLE = ${JSON.stringify(tableName)};
+const dbPool = getPoolForTable(ROOT_TABLE);
 const TABLE_METADATA = ${tableMetadataLiteral};
 const RELATION_GRAPH = ${relationGraphLiteral};
 const TABLE_SQL_MAP = Object.keys(TABLE_METADATA).reduce((acc, table) => {
@@ -145,10 +146,11 @@ const TABLE_COLUMN_SQL_MAP = Object.entries(TABLE_METADATA).reduce((acc, [table,
  * @returns {Promise<any[]>}
  * @throws {Error} Propaga erro de execução do driver.
  */
-async function runQuery(sql, params = [], context = 'query') {
+async function runQuery(sql, params = [], context = 'query', tableName = ROOT_TABLE) {
     const start = Date.now();
+    const activePool = getPoolForTable(tableName);
     try {
-        return await pool.query({ sql, timeout: QUERY_TIMEOUT_MS }, params);
+        return await activePool.query({ sql, timeout: QUERY_TIMEOUT_MS }, params);
     } catch (error) {
         logger.error('[db] ' + context + ' failed in ' + (Date.now() - start) + 'ms: ' + error.message);
         throw error;
@@ -225,7 +227,7 @@ async function findSingleByColumn(table, column, value) {
     }
 
     const query = 'SELECT ' + selectSql + ' FROM ' + tableSql + ' WHERE ' + columnSql + ' = ? LIMIT 1';
-    const [rows] = await runQuery(query, [value], table + '.findSingleByColumn');
+    const [rows] = await runQuery(query, [value], table + '.findSingleByColumn', table);
     return rows[0];
 }
 
@@ -245,7 +247,7 @@ async function findManyByColumn(table, column, value) {
     }
 
     const query = 'SELECT ' + selectSql + ' FROM ' + tableSql + ' WHERE ' + columnSql + ' = ?';
-    const [rows] = await runQuery(query, [value], table + '.findManyByColumn');
+    const [rows] = await runQuery(query, [value], table + '.findManyByColumn', table);
     return rows;
 }
 
@@ -486,7 +488,7 @@ class ${className}Repository {
 
         const values = dataArray.map(obj => keys.map(key => obj[key]));
         const query = 'INSERT INTO ${tableName} (' + keys.join(', ') + ') VALUES ?';
-        const connection = await pool.getConnection();
+        const connection = await dbPool.getConnection();
         try {
             await connection.beginTransaction();
             const [result] = await connection.query({ sql: query, timeout: QUERY_TIMEOUT_MS }, [values]);
@@ -529,7 +531,7 @@ class ${className}Repository {
      */
     async updateBulk(dataArray) {
         if (!Array.isArray(dataArray) || dataArray.length === 0) return { affectedRows: 0 };
-        const connection = await pool.getConnection();
+        const connection = await dbPool.getConnection();
         try {
             await connection.beginTransaction();
             let totalAffected = 0;
@@ -558,7 +560,7 @@ class ${className}Repository {
     async deleteBulk(ids) {
         if (!Array.isArray(ids) || ids.length === 0) return { affectedRows: 0 };
         const placeholders = ids.map(() => '?').join(', ');
-        const connection = await pool.getConnection();
+        const connection = await dbPool.getConnection();
         try {
             await connection.beginTransaction();
             const [result] = await connection.query({ sql: 'DELETE FROM ${tableName} WHERE ${pk} IN (' + placeholders + ')', timeout: QUERY_TIMEOUT_MS }, ids);

@@ -384,27 +384,56 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
 
   database: () => `
 /**
- * @fileoverview Configuração de pool MySQL com timeout e keep-alive.
+ * @fileoverview Configuração de múltiplos pools MySQL com resolução por tabela.
  */
 
 const mysql = require('mysql2/promise');
 const env = require('./env');
+const tableDatabaseMap = require('./databaseTables');
 
-const pool = mysql.createPool({
-    host: env.DB_HOST,
-    user: env.DB_USER,
-    password: env.DB_PASSWORD,
-    database: env.DB_NAME,
-    port: env.DB_PORT,
+function createPool(config) {
+  return mysql.createPool({
+    host: config.host,
+    user: config.user,
+    password: config.password,
+    database: config.database,
+    port: config.port,
     waitForConnections: true,
-  connectionLimit: Number(process.env.DB_CONNECTION_LIMIT) || 10,
-  queueLimit: Number(process.env.DB_QUEUE_LIMIT) || 0,
-  connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 10000,
-  enableKeepAlive: true,
-  keepAliveInitialDelay: 0
-});
+    connectionLimit: Number(process.env.DB_CONNECTION_LIMIT) || 10,
+    queueLimit: Number(process.env.DB_QUEUE_LIMIT) || 0,
+    connectTimeout: Number(process.env.DB_CONNECT_TIMEOUT_MS) || 10000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 0,
+  });
+}
 
-module.exports = pool;
+const pools = Object.fromEntries(
+  Object.entries(env.DB_CONNECTIONS).map(([key, cfg]) => [key, createPool(cfg)]),
+);
+
+const fallbackDatabaseKey = env.DEFAULT_DB_KEY || Object.keys(pools)[0] || 'default';
+
+function resolveDatabaseKey(tableName) {
+  return tableDatabaseMap[tableName] || fallbackDatabaseKey;
+}
+
+function getPoolForTable(tableName) {
+  const dbKey = resolveDatabaseKey(tableName);
+  const pool = pools[dbKey];
+  if (!pool) {
+    const known = Object.keys(pools).join(', ');
+    throw new Error(
+      'Pool not configured for table "' + tableName + '". Resolved key: "' + dbKey + '". Known keys: [' + known + ']',
+    );
+  }
+  return pool;
+}
+
+module.exports = {
+  pools,
+  resolveDatabaseKey,
+  getPoolForTable,
+};
 `,
 
   env: () => `
@@ -518,7 +547,52 @@ require('dotenv').config();
 
   const CORS_ALLOWED_ORIGINS = parseList(process.env.CORS_ALLOWED_ORIGINS);
 
-module.exports = {
+  function parseDbConnections(raw) {
+    if (!raw) {
+      return {
+        default: {
+          host: process.env.DB_HOST,
+          user: process.env.DB_USER,
+          password: process.env.DB_PASSWORD,
+          database: process.env.DB_NAME,
+          port: parseNumber(process.env.DB_PORT, 3306),
+        },
+      };
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (error) {
+      throw new Error('DB_CONNECTIONS must be a valid JSON object');
+    }
+
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('DB_CONNECTIONS must be a JSON object of named connections');
+    }
+
+    const normalized = {};
+    for (const [key, config] of Object.entries(parsed)) {
+      if (!config || typeof config !== 'object' || Array.isArray(config)) {
+        throw new Error('DB_CONNECTIONS."' + key + '" must be an object');
+      }
+
+      normalized[key] = {
+        host: config.host,
+        user: config.user,
+        password: config.password,
+        database: config.database,
+        port: parseNumber(config.port, 3306),
+      };
+    }
+
+    return normalized;
+  }
+
+  const DB_CONNECTIONS = parseDbConnections(process.env.DB_CONNECTIONS);
+  const DEFAULT_DB_KEY = process.env.DEFAULT_DB_KEY || Object.keys(DB_CONNECTIONS)[0] || 'default';
+
+  module.exports = {
     NODE_ENV,
     PORT: process.env.PORT || 3000,
     DB_HOST: process.env.DB_HOST,
@@ -526,6 +600,8 @@ module.exports = {
     DB_PASSWORD: process.env.DB_PASSWORD,
     DB_NAME: process.env.DB_NAME,
     DB_PORT: parseNumber(process.env.DB_PORT, 3306),
+    DB_CONNECTIONS,
+    DEFAULT_DB_KEY,
     JWT_SECRET: process.env.JWT_SECRET,
     JWT_KEYS,
     JWT_ACTIVE_KID,
@@ -1132,6 +1208,11 @@ DB_USER=${process.env.DB_USER || 'root'}
 DB_PASSWORD=${process.env.DB_PASSWORD || ''}
 DB_NAME=${process.env.DB_NAME || 'my_database'}
 DB_PORT=${process.env.DB_PORT || 3306}
+
+# Optional multi-database mode (JSON object by connection key)
+# Example: {"default":{"host":"localhost","user":"root","password":"","database":"db1","port":3306},"crm":{"host":"localhost","user":"root","password":"","database":"db2","port":3306}}
+DB_CONNECTIONS=
+DEFAULT_DB_KEY=default
 
 # Disable auth for all routes (non-production only; blocked in production)
 AUTH_DISABLED=true

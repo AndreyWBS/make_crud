@@ -167,10 +167,23 @@ function addLayerGenerators(engine, outputDir, tablesConfig) {
     );
 }
 
-function addStaticGenerators(engine, outputDir, enabledTables) {
+function addStaticGenerators(
+  engine,
+  outputDir,
+  enabledTables,
+  tableDatabaseMap = {},
+  generatedEnvFileContent = null,
+) {
   engine
     .addGenerator(
       new StaticFileGenerator(outputDir, 'src/config/database.js', infraTemplates.database),
+    )
+    .addGenerator(
+      new StaticFileGenerator(
+        outputDir,
+        'src/config/databaseTables.js',
+        () => `module.exports = ${JSON.stringify(tableDatabaseMap, null, 2)};\n`,
+      ),
     )
     .addGenerator(new StaticFileGenerator(outputDir, 'src/config/env.js', infraTemplates.env))
     .addGenerator(
@@ -220,8 +233,110 @@ function addStaticGenerators(engine, outputDir, enabledTables) {
     )
     .addGenerator(new StaticFileGenerator(outputDir, 'src/server.js', infraTemplates.server))
     .addGenerator(new StaticFileGenerator(outputDir, 'package.json', infraTemplates.packageJson))
-    .addGenerator(new StaticFileGenerator(outputDir, '.env', infraTemplates.envfile))
+    .addGenerator(
+      new StaticFileGenerator(
+        outputDir,
+        '.env',
+        generatedEnvFileContent ? () => generatedEnvFileContent : infraTemplates.envfile,
+      ),
+    )
     .addGenerator(new StaticFileGenerator(outputDir, '.gitignore', infraTemplates.gitignoreFile));
+}
+
+function buildTableDatabaseMap(enabledDatabaseEntries) {
+  const tableDatabaseMap = {};
+  for (const [databaseKey, databaseSettings] of enabledDatabaseEntries) {
+    const tablesConfig = databaseSettings?.tables || {};
+    for (const [tableName, tableConfig] of Object.entries(tablesConfig)) {
+      if (tableConfig?.enabled !== false) {
+        tableDatabaseMap[tableName] = databaseKey;
+      }
+    }
+  }
+  return tableDatabaseMap;
+}
+
+function resolveDefaultDatabaseKey(enabledDatabaseEntries, dbConfigBundle) {
+  const enabledDatabaseKeys = enabledDatabaseEntries.map(([databaseKey]) => databaseKey);
+  if (enabledDatabaseKeys.includes(dbConfigBundle.defaultDatabase)) {
+    return dbConfigBundle.defaultDatabase;
+  }
+  return enabledDatabaseKeys[0] || dbConfigBundle.defaultDatabase || 'default';
+}
+
+function buildEnvFileContent(enabledDatabaseEntries, dbConfigBundle) {
+  const defaultDatabaseKey = resolveDefaultDatabaseKey(enabledDatabaseEntries, dbConfigBundle);
+  const defaultDatabaseConfig = dbConfigBundle.databases[defaultDatabaseKey] || {};
+
+  const dbConnections = Object.fromEntries(
+    enabledDatabaseEntries.map(([databaseKey]) => {
+      const dbConfig = dbConfigBundle.databases[databaseKey] || {};
+      return [
+        databaseKey,
+        {
+          host: dbConfig.host || '',
+          user: dbConfig.user || '',
+          password: dbConfig.password || '',
+          database: dbConfig.database || '',
+          port: Number(dbConfig.port) || 3306,
+        },
+      ];
+    }),
+  );
+
+  return `PORT=${process.env.PORT || 3000}
+NODE_ENV=development
+
+
+
+DB_HOST=${defaultDatabaseConfig.host || 'localhost'}
+DB_USER=${defaultDatabaseConfig.user || 'root'}
+DB_PASSWORD=${defaultDatabaseConfig.password || ''}
+DB_NAME=${defaultDatabaseConfig.database || 'my_database'}
+DB_PORT=${defaultDatabaseConfig.port || 3306}
+
+# Optional multi-database mode (JSON object by connection key)
+# Example: {"default":{"host":"localhost","user":"root","password":"","database":"db1","port":3306},"crm":{"host":"localhost","user":"root","password":"","database":"db2","port":3306}}
+DB_CONNECTIONS=${JSON.stringify(dbConnections)}
+DEFAULT_DB_KEY=${defaultDatabaseKey}
+
+# Disable auth for all routes (non-production only; blocked in production)
+AUTH_DISABLED=true
+
+JWT_SECRET=replace_with_minimum_32_characters_secret
+JWT_ISSUER=generated-api
+JWT_AUDIENCE=generated-api-clients
+JWT_ALGORITHMS=HS256
+JWT_ACCESS_MAX_AGE=15m
+
+# Optional key rotation format: kid:secret,kid2:secret2
+JWT_KEYS=
+JWT_ACTIVE_KID=
+
+DB_CONNECTION_LIMIT=10
+DB_QUEUE_LIMIT=0
+DB_CONNECT_TIMEOUT_MS=10000
+DB_QUERY_TIMEOUT_MS=10000
+API_MAX_LIMIT=100
+API_JSON_LIMIT=256kb
+API_MAX_QUERY_PARAMS=20
+API_MAX_URL_LENGTH=2048
+
+RATE_LIMIT_WINDOW_MS=60000
+RATE_LIMIT_MAX=120
+RATE_LIMIT_SENSITIVE_MAX=40
+SLOW_DOWN_WINDOW_MS=60000
+SLOW_DOWN_DELAY_AFTER=40
+SLOW_DOWN_DELAY_MS=200
+
+# CORS allowlist (comma separated)
+CORS_ALLOWED_ORIGINS=http://localhost:3000
+
+# Swagger defaults are secure for production
+SWAGGER_ENABLED=true
+SWAGGER_REQUIRE_ADMIN=true
+SWAGGER_ALLOWED_IPS=
+`;
 }
 
 function addOptionalGenerators(
@@ -554,6 +669,7 @@ async function generateSingleApi({
   const mergedTablesConfig = {};
   const mergedSchema = {};
   const mergedSeedSnapshot = {};
+  const tableDatabaseMap = {};
 
   for (const [databaseKey, databaseSettings] of enabledDatabaseEntries) {
     const dbConfig = dbConfigBundle.databases[databaseKey];
@@ -566,6 +682,11 @@ async function generateSingleApi({
 
     const tablesConfig = databaseSettings.tables || {};
     Object.assign(mergedTablesConfig, tablesConfig);
+    for (const [tableName, tableConfig] of Object.entries(tablesConfig)) {
+      if (tableConfig?.enabled !== false) {
+        tableDatabaseMap[tableName] = databaseKey;
+      }
+    }
 
     const introspector = new Introspector(dbConfig);
     console.log(`Introspectando banco '${databaseKey}'...`);
@@ -585,11 +706,12 @@ async function generateSingleApi({
   }
 
   const enabledTables = (tableName) => mergedTablesConfig[tableName]?.enabled !== false;
+  const generatedEnvFileContent = buildEnvFileContent(enabledDatabaseEntries, dbConfigBundle);
   const staticIntrospector = { getSchema: async () => mergedSchema };
   const engine = new GeneratorEngine(staticIntrospector);
 
   addLayerGenerators(engine, outputDir, mergedTablesConfig);
-  addStaticGenerators(engine, outputDir, enabledTables);
+  addStaticGenerators(engine, outputDir, enabledTables, tableDatabaseMap, generatedEnvFileContent);
   addOptionalGenerators(
     engine,
     outputDir,
@@ -636,6 +758,11 @@ async function generateSeparateApis({
 
     const tablesConfig = databaseSettings.tables || {};
     const enabledTables = (tableName) => tablesConfig[tableName]?.enabled !== false;
+    const tableDatabaseMap = buildTableDatabaseMap([[databaseKey, databaseSettings]]);
+    const generatedEnvFileContent = buildEnvFileContent(
+      [[databaseKey, databaseSettings]],
+      dbConfigBundle,
+    );
     const databaseOutputDir = resolveDatabaseOutputDir(
       outputDir,
       databaseKey,
@@ -657,7 +784,13 @@ async function generateSeparateApis({
     }
 
     addLayerGenerators(engine, databaseOutputDir, tablesConfig);
-    addStaticGenerators(engine, databaseOutputDir, enabledTables);
+    addStaticGenerators(
+      engine,
+      databaseOutputDir,
+      enabledTables,
+      tableDatabaseMap,
+      generatedEnvFileContent,
+    );
     addOptionalGenerators(
       engine,
       databaseOutputDir,
