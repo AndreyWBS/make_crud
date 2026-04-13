@@ -1,7 +1,7 @@
-const path = require("path");
-const fs = require("fs-extra");
-const BaseGenerator = require("../core/BaseGenerator");
-const { camelCase } = require("../utils/stringUtils");
+const path = require('path');
+const fs = require('fs-extra');
+const BaseGenerator = require('../core/BaseGenerator');
+const { camelCase } = require('../utils/stringUtils');
 
 /**
  * Gera arquivos por tabela em uma camada específica (ex.: controllers, services).
@@ -16,10 +16,10 @@ class LayerGenerator extends BaseGenerator {
   /**
    * @param {string} targetDir Diretório raiz de saída.
    * @param {string} layerName Nome da camada (ex.: 'controllers').
-   * @param {(tableName: string, tableSchema: object) => string} templateFn Função de template por tabela.
+   * @param {(tableName: string, tableSchema: object, fullSchema?: object) => string} templateFn Função de template por tabela.
    * @param {string} [extention='js'] Extensão do arquivo gerado.
    */
-  constructor(targetDir, layerName, templateFn, extention = "js") {
+  constructor(targetDir, layerName, templateFn, extention = 'js') {
     super(targetDir);
     this.layerName = layerName; // e.g., 'controllers'
     this.templateFn = templateFn;
@@ -42,21 +42,20 @@ class LayerGenerator extends BaseGenerator {
    */
   async generate(schema) {
     const tables = Object.keys(schema);
-    const layerPath = path.join(this.targetDir, "src", this.layerName);
+    const layerPath = path.join(this.targetDir, 'src', this.layerName);
     await fs.ensureDir(layerPath);
 
     for (const table of tables) {
       const baseLayerName = path.basename(this.layerName);
       let suffix;
-      if (baseLayerName.endsWith("s")) {
-        suffix =
-          baseLayerName.charAt(0).toUpperCase() + baseLayerName.slice(1, -1);
+      if (baseLayerName.endsWith('s')) {
+        suffix = baseLayerName.charAt(0).toUpperCase() + baseLayerName.slice(1, -1);
       } else {
         suffix = baseLayerName.charAt(0).toUpperCase() + baseLayerName.slice(1);
       }
-      if (baseLayerName === "repositories") suffix = "Repository";
+      if (baseLayerName === 'repositories') suffix = 'Repository';
       const fileName = `${camelCase(table)}${suffix}.${this.extention}`;
-      const content = this.templateFn(table, schema[table]);
+      const content = this.templateFn(table, schema[table], schema);
       await fs.writeFile(path.join(layerPath, fileName), content);
     }
   }

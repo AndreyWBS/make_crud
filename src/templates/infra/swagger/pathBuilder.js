@@ -1,5 +1,5 @@
-const { pascalCase } = require("../../../utils/stringUtils");
-const { toOpenApiSchema } = require("./schemaMapper");
+const { pascalCase } = require('../../../utils/stringUtils');
+const { toOpenApiSchema } = require('./schemaMapper');
 
 function buildCollectionPaths(table, className) {
   return {
@@ -9,40 +9,40 @@ function buildCollectionPaths(table, className) {
       security: [{ bearerAuth: [] }],
       parameters: [
         {
-          in: "query",
-          name: "page",
-          schema: { type: "integer", minimum: 1, default: 1 },
+          in: 'query',
+          name: 'page',
+          schema: { type: 'integer', minimum: 1, default: 1 },
         },
         {
-          in: "query",
-          name: "limit",
-          schema: { type: "integer", minimum: 1, default: 10 },
+          in: 'query',
+          name: 'limit',
+          schema: { type: 'integer', minimum: 1, default: 10 },
         },
       ],
       responses: {
         200: {
-          description: "Lista paginada de registros",
+          description: 'Lista paginada de registros',
           content: {
-            "application/json": {
+            'application/json': {
               schema: {
-                type: "object",
+                type: 'object',
                 properties: {
                   data: {
-                    type: "array",
+                    type: 'array',
                     items: { $ref: `#/components/schemas/${className}` },
                   },
                   meta: {
-                    type: "object",
+                    type: 'object',
                     properties: {
-                      totalItems: { type: "integer" },
-                      totalPages: { type: "integer" },
-                      currentPage: { type: "integer" },
-                      itemsPerPage: { type: "integer" },
+                      totalItems: { type: 'integer' },
+                      totalPages: { type: 'integer' },
+                      currentPage: { type: 'integer' },
+                      itemsPerPage: { type: 'integer' },
                     },
                   },
                   links: {
-                    type: "object",
-                    additionalProperties: { type: "string" },
+                    type: 'object',
+                    additionalProperties: { type: 'string' },
                   },
                 },
               },
@@ -58,16 +58,16 @@ function buildCollectionPaths(table, className) {
       requestBody: {
         required: true,
         content: {
-          "application/json": {
+          'application/json': {
             schema: { $ref: `#/components/schemas/${className}Input` },
           },
         },
       },
       responses: {
         201: {
-          description: "Registro criado",
+          description: 'Registro criado',
           content: {
-            "application/json": {
+            'application/json': {
               schema: { $ref: `#/components/schemas/${className}` },
             },
           },
@@ -86,9 +86,9 @@ function buildBulkPath(table, className) {
       requestBody: {
         required: true,
         content: {
-          "application/json": {
+          'application/json': {
             schema: {
-              type: "array",
+              type: 'array',
               items: { $ref: `#/components/schemas/${className}Input` },
             },
           },
@@ -96,13 +96,13 @@ function buildBulkPath(table, className) {
       },
       responses: {
         201: {
-          description: "Registros criados",
+          description: 'Registros criados',
           content: {
-            "application/json": {
+            'application/json': {
               schema: {
-                type: "object",
+                type: 'object',
                 properties: {
-                  affectedRows: { type: "integer" },
+                  affectedRows: { type: 'integer' },
                 },
               },
             },
@@ -115,10 +115,10 @@ function buildBulkPath(table, className) {
 
 function buildResourcePaths(table, className) {
   const idParam = {
-    in: "path",
-    name: "id",
+    in: 'path',
+    name: 'id',
     required: true,
-    schema: { type: "string" },
+    schema: { type: 'string' },
   };
 
   return {
@@ -129,9 +129,9 @@ function buildResourcePaths(table, className) {
       parameters: [idParam],
       responses: {
         200: {
-          description: "Registro encontrado",
+          description: 'Registro encontrado',
           content: {
-            "application/json": {
+            'application/json': {
               schema: { $ref: `#/components/schemas/${className}` },
             },
           },
@@ -146,16 +146,16 @@ function buildResourcePaths(table, className) {
       requestBody: {
         required: true,
         content: {
-          "application/json": {
+          'application/json': {
             schema: { $ref: `#/components/schemas/${className}Input` },
           },
         },
       },
       responses: {
         200: {
-          description: "Registro atualizado",
+          description: 'Registro atualizado',
           content: {
-            "application/json": {
+            'application/json': {
               schema: { $ref: `#/components/schemas/${className}` },
             },
           },
@@ -168,7 +168,62 @@ function buildResourcePaths(table, className) {
       security: [{ bearerAuth: [] }],
       parameters: [idParam],
       responses: {
-        204: { description: "Removido com sucesso" },
+        204: { description: 'Removido com sucesso' },
+      },
+    },
+  };
+}
+
+function buildRelationsByIdPath(table, className) {
+  return {
+    get: {
+      tags: [className],
+      summary: `Busca ${className} por ID com relacionamentos encadeados`,
+      security: [{ bearerAuth: [] }],
+      parameters: [
+        {
+          in: 'path',
+          name: 'id',
+          required: true,
+          schema: { type: 'string' },
+        },
+        {
+          in: 'query',
+          name: 'depth',
+          schema: { type: 'integer', minimum: 0, maximum: 5, default: 2 },
+          description: 'Profundidade máxima para expandir relacionamentos',
+        },
+      ],
+      responses: {
+        200: {
+          description: 'Registro com árvore de relacionamentos',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                allOf: [{ $ref: `#/components/schemas/${className}` }],
+                properties: {
+                  relationships: {
+                    type: 'object',
+                    properties: {
+                      belongsTo: {
+                        type: 'object',
+                        additionalProperties: { type: 'object' },
+                      },
+                      hasMany: {
+                        type: 'object',
+                        additionalProperties: {
+                          type: 'array',
+                          items: { type: 'object' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
       },
     },
   };
@@ -183,57 +238,57 @@ function buildSearchByFieldPaths(table, className, nonPkColumns) {
         security: [{ bearerAuth: [] }],
         parameters: [
           {
-            in: "path",
-            name: "column",
+            in: 'path',
+            name: 'column',
             required: true,
-            schema: { type: "string" },
-            description: "Nome da coluna para buscar",
+            schema: { type: 'string' },
+            description: 'Nome da coluna para buscar',
           },
           {
-            in: "path",
-            name: "value",
+            in: 'path',
+            name: 'value',
             required: true,
-            schema: { type: "string" },
+            schema: { type: 'string' },
             description:
-              "Valor para buscar (LIKE para colunas varchar/text, igualdade exata para números)",
+              'Valor para buscar (LIKE para colunas varchar/text, igualdade exata para números)',
           },
           {
-            in: "query",
-            name: "page",
-            schema: { type: "integer", minimum: 1, default: 1 },
-            description: "Número da página",
+            in: 'query',
+            name: 'page',
+            schema: { type: 'integer', minimum: 1, default: 1 },
+            description: 'Número da página',
           },
           {
-            in: "query",
-            name: "limit",
-            schema: { type: "integer", minimum: 1, default: 10 },
-            description: "Registros por página",
+            in: 'query',
+            name: 'limit',
+            schema: { type: 'integer', minimum: 1, default: 10 },
+            description: 'Registros por página',
           },
         ],
         responses: {
           200: {
-            description: "Lista paginada de registros encontrados",
+            description: 'Lista paginada de registros encontrados',
             content: {
-              "application/json": {
+              'application/json': {
                 schema: {
-                  type: "object",
+                  type: 'object',
                   properties: {
                     data: {
-                      type: "array",
+                      type: 'array',
                       items: { $ref: `#/components/schemas/${className}` },
                     },
                     meta: {
-                      type: "object",
+                      type: 'object',
                       properties: {
-                        totalItems: { type: "integer" },
-                        totalPages: { type: "integer" },
-                        currentPage: { type: "integer" },
-                        itemsPerPage: { type: "integer" },
+                        totalItems: { type: 'integer' },
+                        totalPages: { type: 'integer' },
+                        currentPage: { type: 'integer' },
+                        itemsPerPage: { type: 'integer' },
                       },
                     },
                     links: {
-                      type: "object",
-                      additionalProperties: { type: "string" },
+                      type: 'object',
+                      additionalProperties: { type: 'string' },
                     },
                   },
                 },
@@ -252,17 +307,15 @@ function buildPaths(tables, schema) {
   tables.forEach((table) => {
     const className = pascalCase(table);
     const columns = (schema[table] && schema[table].columns) || [];
-    const pk = columns.find((c) => c.key === "PRI")?.name || "id";
+    const pk = columns.find((c) => c.key === 'PRI')?.name || 'id';
     const nonPkColumns = columns.filter((c) => c.name !== pk);
 
     paths[`/api/${table}`] = buildCollectionPaths(table, className);
     paths[`/api/${table}/bulk`] = buildBulkPath(table, className);
     paths[`/api/${table}/{id}`] = buildResourcePaths(table, className);
+    paths[`/api/${table}/{id}/relations`] = buildRelationsByIdPath(table, className);
 
-    Object.assign(
-      paths,
-      buildSearchByFieldPaths(table, className, nonPkColumns),
-    );
+    Object.assign(paths, buildSearchByFieldPaths(table, className, nonPkColumns));
   });
 
   return paths;

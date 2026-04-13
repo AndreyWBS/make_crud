@@ -32,7 +32,7 @@ module.exports = ${className};
 `;
   },
 
-  repository: (tableName, schema) => {
+  repository: (tableName, schema, fullSchema = null) => {
     const className = pascalCase(tableName);
     const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
     const allColumns = schema.columns.map((col) => col.name);
@@ -50,6 +50,54 @@ module.exports = ${className};
     const columnUnionType = schema.columns.length
       ? schema.columns.map((col) => `'${col.name}'`).join(' | ')
       : 'string';
+    const schemaMap =
+      fullSchema && typeof fullSchema === 'object' ? fullSchema : { [tableName]: schema };
+    const tableMetadata = Object.entries(schemaMap).reduce((acc, [currentTable, currentSchema]) => {
+      const columns = (currentSchema?.columns || []).map((col) => col.name);
+      const currentPk =
+        currentSchema?.columns?.find((col) => col.key === 'PRI')?.name ||
+        (columns.includes('id') ? 'id' : columns[0] || 'id');
+
+      acc[currentTable] = {
+        primaryKey: currentPk,
+        columns,
+      };
+      return acc;
+    }, {});
+
+    const relationGraph = Object.keys(schemaMap).reduce((acc, currentTable) => {
+      acc[currentTable] = { outgoing: [], incoming: [] };
+      return acc;
+    }, {});
+
+    for (const [sourceTable, sourceSchema] of Object.entries(schemaMap)) {
+      const foreignKeys = sourceSchema?.foreignKeys || [];
+      for (const fk of foreignKeys) {
+        if (!relationGraph[sourceTable]) {
+          relationGraph[sourceTable] = { outgoing: [], incoming: [] };
+        }
+        if (!relationGraph[fk.referencedTable]) {
+          relationGraph[fk.referencedTable] = { outgoing: [], incoming: [] };
+        }
+
+        relationGraph[sourceTable].outgoing.push({
+          sourceTable,
+          sourceColumn: fk.column,
+          targetTable: fk.referencedTable,
+          targetColumn: fk.referencedColumn,
+        });
+
+        relationGraph[fk.referencedTable].incoming.push({
+          sourceTable,
+          sourceColumn: fk.column,
+          targetTable: fk.referencedTable,
+          targetColumn: fk.referencedColumn,
+        });
+      }
+    }
+
+    const tableMetadataLiteral = JSON.stringify(tableMetadata);
+    const relationGraphLiteral = JSON.stringify(relationGraph);
 
     return `
 /**
@@ -70,6 +118,24 @@ const SELECT_COLUMNS_SQL = '${columnListSql}';
 const FILTERABLE_COLUMNS = new Set(${filterableColumns});
 const INSERTABLE_COLUMNS = new Set(${insertableColumns});
 const UPDATABLE_COLUMNS = new Set(${updatableColumns});
+const ROOT_TABLE = ${JSON.stringify(tableName)};
+const TABLE_METADATA = ${tableMetadataLiteral};
+const RELATION_GRAPH = ${relationGraphLiteral};
+const TABLE_SQL_MAP = Object.keys(TABLE_METADATA).reduce((acc, table) => {
+    acc[table] = '\`' + table + '\`';
+    return acc;
+}, {});
+const TABLE_SELECT_SQL_MAP = Object.entries(TABLE_METADATA).reduce((acc, [table, metadata]) => {
+    acc[table] = (metadata.columns || []).map((column) => '\`' + column + '\`').join(', ');
+    return acc;
+}, {});
+const TABLE_COLUMN_SQL_MAP = Object.entries(TABLE_METADATA).reduce((acc, [table, metadata]) => {
+    acc[table] = (metadata.columns || []).reduce((innerAcc, column) => {
+        innerAcc[column] = '\`' + column + '\`';
+        return innerAcc;
+    }, {});
+    return acc;
+}, {});
 
 /**
  * Executa query SQL com timeout e telemetria.
@@ -130,6 +196,151 @@ function normalizeBulkShape(dataArray) {
 }
 
 /**
+ * Gera chave estável para serializar relacionamentos sem colisão.
+ * @param {string} baseKey Prefixo por tabela.
+ * @param {number} index Índice da relação no array.
+ * @param {string} discriminator Coluna de referência.
+ * @returns {string}
+ */
+function buildRelationKey(baseKey, index, discriminator) {
+    if (index === 0) {
+        return baseKey;
+    }
+    return baseKey + '_' + discriminator;
+}
+
+/**
+ * Busca um único registro em tabela arbitrária por coluna.
+ * @param {string} table Nome da tabela.
+ * @param {string} column Nome da coluna.
+ * @param {string|number} value Valor de filtro.
+ * @returns {Promise<any|undefined>}
+ */
+async function findSingleByColumn(table, column, value) {
+    const tableSql = TABLE_SQL_MAP[table];
+    const columnSql = TABLE_COLUMN_SQL_MAP[table] && TABLE_COLUMN_SQL_MAP[table][column];
+    const selectSql = TABLE_SELECT_SQL_MAP[table];
+    if (!tableSql || !columnSql || !selectSql) {
+        return undefined;
+    }
+
+    const query = 'SELECT ' + selectSql + ' FROM ' + tableSql + ' WHERE ' + columnSql + ' = ? LIMIT 1';
+    const [rows] = await runQuery(query, [value], table + '.findSingleByColumn');
+    return rows[0];
+}
+
+/**
+ * Busca múltiplos registros em tabela arbitrária por coluna.
+ * @param {string} table Nome da tabela.
+ * @param {string} column Nome da coluna.
+ * @param {string|number} value Valor de filtro.
+ * @returns {Promise<any[]>}
+ */
+async function findManyByColumn(table, column, value) {
+    const tableSql = TABLE_SQL_MAP[table];
+    const columnSql = TABLE_COLUMN_SQL_MAP[table] && TABLE_COLUMN_SQL_MAP[table][column];
+    const selectSql = TABLE_SELECT_SQL_MAP[table];
+    if (!tableSql || !columnSql || !selectSql) {
+        return [];
+    }
+
+    const query = 'SELECT ' + selectSql + ' FROM ' + tableSql + ' WHERE ' + columnSql + ' = ?';
+    const [rows] = await runQuery(query, [value], table + '.findManyByColumn');
+    return rows;
+}
+
+/**
+ * Monta grafo de relacionamentos recursivo para um registro.
+ * @param {string} table Tabela da entidade atual.
+ * @param {Record<string, any>} row Linha base.
+ * @param {number} depth Profundidade restante.
+ * @param {Set<string>} visited Nós já percorridos.
+ * @returns {Promise<Record<string, any>>}
+ */
+async function buildNestedRelations(table, row, depth, visited) {
+    if (!row || depth <= 0) {
+        return row;
+    }
+
+    const metadata = TABLE_METADATA[table] || {};
+    const primaryKey = metadata.primaryKey;
+    const identity = primaryKey && row[primaryKey] !== undefined && row[primaryKey] !== null
+        ? table + ':' + String(row[primaryKey])
+        : null;
+
+    if (identity && visited.has(identity)) {
+        return row;
+    }
+
+    const nextVisited = new Set(visited);
+    if (identity) {
+        nextVisited.add(identity);
+    }
+
+    const relationDef = RELATION_GRAPH[table] || { outgoing: [], incoming: [] };
+    const belongsTo = {};
+    const hasMany = {};
+
+    for (let i = 0; i < relationDef.outgoing.length; i++) {
+        const relation = relationDef.outgoing[i];
+        const foreignValue = row[relation.sourceColumn];
+        if (foreignValue === undefined || foreignValue === null) {
+            continue;
+        }
+
+        const relatedRow = await findSingleByColumn(
+            relation.targetTable,
+            relation.targetColumn,
+            foreignValue,
+        );
+        if (!relatedRow) {
+            continue;
+        }
+
+        const key = buildRelationKey(relation.targetTable, i, relation.sourceColumn);
+        belongsTo[key] = await buildNestedRelations(relation.targetTable, relatedRow, depth - 1, nextVisited);
+    }
+
+    for (let i = 0; i < relationDef.incoming.length; i++) {
+        const relation = relationDef.incoming[i];
+        const localValue = row[relation.targetColumn];
+        if (localValue === undefined || localValue === null) {
+            continue;
+        }
+
+        const relatedRows = await findManyByColumn(
+            relation.sourceTable,
+            relation.sourceColumn,
+            localValue,
+        );
+        if (relatedRows.length === 0) {
+            continue;
+        }
+
+        const key = buildRelationKey(relation.sourceTable, i, relation.sourceColumn);
+        hasMany[key] = await Promise.all(
+            relatedRows.map((relatedRow) =>
+                buildNestedRelations(relation.sourceTable, relatedRow, depth - 1, nextVisited),
+            ),
+        );
+    }
+
+    const relationships = {};
+    if (Object.keys(belongsTo).length > 0) {
+        relationships.belongsTo = belongsTo;
+    }
+    if (Object.keys(hasMany).length > 0) {
+        relationships.hasMany = hasMany;
+    }
+
+    if (Object.keys(relationships).length === 0) {
+        return row;
+    }
+
+    return { ...row, relationships };
+}
+
+/**
  * @class ${className}Repository
  * @classdesc Camada de persistência para ${tableName}.
  */
@@ -179,6 +390,27 @@ class ${className}Repository {
     async findById(id) {
         const [rows] = await runQuery('SELECT ' + SELECT_COLUMNS_SQL + ' FROM ${tableName} WHERE ${pk} = ?', [id], '${tableName}.findById');
         return rows[0];
+    }
+
+    /**
+     * Busca registro por id com relacionamentos encadeados.
+     * @param {string|number} id Valor da PK.
+     * @param {number|string} [depth=2] Profundidade máxima de encadeamento.
+     * @returns {Promise<any|undefined>}
+     */
+    async findByIdWithRelations(id, depth = 2) {
+        const root = await this.findById(id);
+        if (!root) {
+            return undefined;
+        }
+
+        const parsedDepth = Number.parseInt(depth, 10);
+        const safeDepth = Number.isFinite(parsedDepth) ? Math.min(Math.max(parsedDepth, 0), 5) : 2;
+        if (safeDepth === 0) {
+            return root;
+        }
+
+        return buildNestedRelations(ROOT_TABLE, root, safeDepth, new Set());
     }
 
     /**
@@ -388,6 +620,19 @@ class ${className}Service {
     }
 
     /**
+     * Obtém registro por id com JSON de relacionamentos encadeados.
+     * @param {string|number} id Identificador.
+     * @param {number|string} [depth=2] Profundidade máxima de relacionamento.
+     * @returns {Promise<any>}
+     * @throws {AppError} 404 quando não encontrado.
+     */
+    async getByIdWithRelations(id, depth = 2) {
+        const item = await ${repoName}.findByIdWithRelations(id, depth);
+        if (!item) throw new AppError(404, '${className} not found');
+        return item;
+    }
+
+    /**
      * Cria registro.
      * @param {Record<string, any>} data Payload.
      * @returns {Promise<any>}
@@ -552,6 +797,23 @@ class ${className}Controller {
     }
 
     /**
+     * GET /:id/relations
+     * @param {import('express').Request} req
+     * @param {import('express').Response} res
+     * @param {import('express').NextFunction} next
+     * @returns {Promise<void>}
+     */
+    async getByIdWithRelations(req, res, next) {
+        try {
+            const { depth = 2 } = req.query;
+            const item = await ${serviceName}.getByIdWithRelations(req.params.id, depth);
+            res.json(item);
+        } catch (error) {
+            next(error);
+        }
+    }
+
+    /**
      * POST /
      * @param {import('express').Request} req
      * @param {import('express').Response} res
@@ -707,6 +969,7 @@ const canDelete = authorize({
 
 router.get('/', authMiddleware, canRead, ${controllerName}.getAll);
 router.get('/search/:column/:value', authMiddleware, canRead, ${controllerName}.findByColumn);
+router.get('/:id/relations', authMiddleware, canRead, ${controllerName}.getByIdWithRelations);
 router.get('/:id', authMiddleware, canRead, ${controllerName}.getById);
 
 router.post('/', authMiddleware, canWrite, ${validatorName}.validate, ${controllerName}.create);

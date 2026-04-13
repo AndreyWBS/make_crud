@@ -1,24 +1,23 @@
-const { pascalCase, camelCase } = require("../../utils/stringUtils");
+const { pascalCase, camelCase } = require('../../utils/stringUtils');
 
 module.exports = {
   documentation: (tableName, schema) => {
     const className = pascalCase(tableName);
-    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
 
-    const getExampleValue = (type = "string") => {
+    const getExampleValue = (type = 'string') => {
       const t = type.toLowerCase();
       if (
-        t.includes("int") ||
-        t.includes("float") ||
-        t.includes("double") ||
-        t.includes("decimal")
+        t.includes('int') ||
+        t.includes('float') ||
+        t.includes('double') ||
+        t.includes('decimal')
       ) {
         return 0;
       }
-      if (t.includes("bool") || t === "tinyint(1)") return true;
-      if (t.includes("date") || t.includes("time"))
-        return "2026-02-24T12:00:00Z";
-      if (t.includes("json")) return { chave: "valor_exemplo" };
+      if (t.includes('bool') || t === 'tinyint(1)') return true;
+      if (t.includes('date') || t.includes('time')) return '2026-02-24T12:00:00Z';
+      if (t.includes('json')) return { chave: 'valor_exemplo' };
       return `<${type}>`;
     };
 
@@ -31,9 +30,9 @@ module.exports = {
 
     const jsonExample = JSON.stringify(exampleObject, null, 2);
     const indentedJsonExample = jsonExample
-      .split("\n")
+      .split('\n')
       .map((line) => `  ${line}`)
-      .join("\n")
+      .join('\n')
       .trim();
 
     const searchDocs = schema.columns
@@ -50,7 +49,7 @@ Busca registros específicos baseados na coluna \`${routeName}\`.
 **Parâmetros de Rota:**
 | Nome | Tipo | Descrição |
 |------|------|-----------|
-| \`value\` | \`${col.type || "string"}\` | Valor do campo ${routeName} para a busca |
+| \`value\` | \`${col.type || 'string'}\` | Valor do campo ${routeName} para a busca |
 
 **Exemplo de Resposta (Status 200):**
 \`\`\`json
@@ -61,7 +60,7 @@ Busca registros específicos baseados na coluna \`${routeName}\`.
 \`\`\`
 ---`;
       })
-      .join("\n\n");
+      .join('\n\n');
 
     return `
 # Documentação da API: ${className}
@@ -74,11 +73,12 @@ Bem-vindo à documentação dos endpoints para a entidade **${className}**.
 ## 📌 Índice de Rotas
 1. [Listar Todos](#listar-todos)
 2. [Buscar por ID](#buscar-por-id)
-3. [Criar Novo](#criar-novo)
-4. [Criar em Lote (Bulk)](#criar-em-lote-bulk)
-5. [Atualizar](#atualizar)
-6. [Deletar](#deletar)
-7. [Buscas Específicas](#buscas-específicas)
+3. [Buscar por ID com Relacionamentos](#buscar-por-id-com-relacionamentos)
+4. [Criar Novo](#criar-novo)
+5. [Criar em Lote (Bulk)](#criar-em-lote-bulk)
+6. [Atualizar](#atualizar)
+7. [Deletar](#deletar)
+8. [Buscas Específicas](#buscas-específicas)
 
 ---
 
@@ -121,6 +121,33 @@ Retorna um único registro pelo seu \`${pk}\` exclusivo.
 **Exemplo de Resposta (Status 200):**
 \`\`\`json
 // ✍️ Insira o JSON de resposta de um único item aqui
+{
+
+}
+\`\`\`
+
+---
+
+### Buscar por ID com Relacionamentos
+Retorna um único registro incluindo relações encadeadas em JSON (pais e filhos), com controle de profundidade.
+
+- **Método:** \`GET\`
+- **Rota:** \`/api/${tableName}/:id/relations\`
+- **Autenticação:** Requerida
+
+**Parâmetros de Rota:**
+| Nome | Tipo | Descrição |
+|------|------|-----------|
+| \`id\` | \`identificador\` | O identificador único do registro raiz |
+
+**Query Parameters (Opcionais):**
+| Parâmetro | Tipo | Padrão | Descrição |
+|-----------|------|--------|-----------|
+| \`depth\` | \`int\` | 2 | Profundidade máxima de encadeamento (0 a 5) |
+
+**Exemplo de Resposta (Status 200):**
+\`\`\`json
+// ✍️ Insira o JSON de resposta com "relationships.belongsTo" e "relationships.hasMany"
 {
 
 }
@@ -221,22 +248,21 @@ ${searchDocs}
 
   documentationHtml: (tableName, schema) => {
     const className = pascalCase(tableName);
-    const pk = schema.columns.find((c) => c.key === "PRI")?.name || "id";
+    const pk = schema.columns.find((c) => c.key === 'PRI')?.name || 'id';
 
-    const getExampleValue = (type = "string") => {
+    const getExampleValue = (type = 'string') => {
       const t = type.toLowerCase();
       if (
-        t.includes("int") ||
-        t.includes("float") ||
-        t.includes("double") ||
-        t.includes("decimal")
+        t.includes('int') ||
+        t.includes('float') ||
+        t.includes('double') ||
+        t.includes('decimal')
       ) {
         return 0;
       }
-      if (t.includes("bool") || t === "tinyint(1)") return true;
-      if (t.includes("date") || t.includes("time"))
-        return "2026-02-24T12:00:00Z";
-      if (t.includes("json")) return { chave: "valor_exemplo" };
+      if (t.includes('bool') || t === 'tinyint(1)') return true;
+      if (t.includes('date') || t.includes('time')) return '2026-02-24T12:00:00Z';
+      if (t.includes('json')) return { chave: 'valor_exemplo' };
       return `exemplo_${type}`;
     };
 
@@ -271,7 +297,7 @@ ${searchDocs}
                     </div>
                 </div>`,
       )
-      .join("");
+      .join('');
 
     return `
 <!DOCTYPE html>
@@ -304,6 +330,7 @@ ${searchDocs}
                     <ul class="nav flex-column">
                         <li class="nav-item"><a class="nav-link text-dark" href="#listar">Listar Todos</a></li>
                         <li class="nav-item"><a class="nav-link text-dark" href="#buscar-id">Buscar por ID</a></li>
+                        <li class="nav-item"><a class="nav-link text-dark" href="#buscar-relacoes">Buscar por ID com Relacionamentos</a></li>
                         <li class="nav-item"><a class="nav-link text-dark" href="#criar">Criar Novo</a></li>
                         <li class="nav-item"><a class="nav-link text-dark" href="#bulk">Criar em Lote (Bulk)</a></li>
                         <li class="nav-item"><a class="nav-link text-dark" href="#atualizar">Atualizar</a></li>
@@ -341,6 +368,19 @@ ${searchDocs}
                             <h4 class="mb-0">/api/${tableName}/:id</h4>
                         </div>
                         <p>Recupera os detalhes completos de um registro através do seu ID único.</p>
+                    </div>
+                </section>
+
+                <section id="buscar-relacoes" class="card endpoint-card bg-get shadow-sm mt-4">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <span class="badge bg-success method-badge me-2">GET</span>
+                            <h4 class="mb-0">/api/${tableName}/:id/relations</h4>
+                        </div>
+                        <p>Retorna o registro com relacionamentos encadeados em JSON.</p>
+                        <ul>
+                            <li><code>depth</code> (int): profundidade máxima do encadeamento (0 a 5, padrão 2).</li>
+                        </ul>
                     </div>
                 </section>
 
@@ -396,7 +436,7 @@ ${searchDocs}
                 </section>
 
                 <footer class="mt-5 py-3 text-center text-muted border-top">
-                    Documentação gerada em ${new Date().toLocaleDateString("pt-BR")}
+                    Documentação gerada em ${new Date().toLocaleDateString('pt-BR')}
                 </footer>
             </main>
         </div>
