@@ -143,7 +143,7 @@ Retorna um único registro incluindo relações encadeadas em JSON (pais e filho
 **Query Parameters (Opcionais):**
 | Parâmetro | Tipo | Padrão | Descrição |
 |-----------|------|--------|-----------|
-| \`depth\` | \`int\` | 2 | Profundidade máxima de encadeamento (0 a 5) |
+| \`depth\` | \`int\` | 1 | Profundidade máxima de encadeamento (0 a 5) |
 
 **Exemplo de Resposta (Status 200):**
 \`\`\`json
@@ -379,7 +379,7 @@ ${searchDocs}
                         </div>
                         <p>Retorna o registro com relacionamentos encadeados em JSON.</p>
                         <ul>
-                            <li><code>depth</code> (int): profundidade máxima do encadeamento (0 a 5, padrão 2).</li>
+                            <li><code>depth</code> (int): profundidade máxima do encadeamento (0 a 5, padrão 1).</li>
                         </ul>
                     </div>
                 </section>

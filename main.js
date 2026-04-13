@@ -11,6 +11,7 @@ const StaticFileGenerator = require('./src/generators/StaticFileGenerator');
 const crudTemplates = require('./src/templates/crudTemplates');
 const infraTemplates = require('./src/templates/infraTemplates');
 const validatorTemplates = require('./src/templates/validatorTemplates');
+const testsTemplates = require('./src/templates/testsTemplates');
 
 function parseBoolean(value, fallback = true) {
   if (value === undefined || value === null || value === '') return fallback;
@@ -52,6 +53,14 @@ async function main() {
     .addGenerator(new LayerGenerator(targetDir, 'docs/rotas_md', crudTemplates.documentation, 'md'))
     .addGenerator(
       new LayerGenerator(targetDir, 'docs/html', crudTemplates.documentationHtml, 'html'),
+    )
+    .addGenerator(
+      new LayerGenerator(
+        targetDir,
+        'tests/integration',
+        testsTemplates.resourceCrudIntegration,
+        'test.js',
+      ),
     )
     .addGenerator(new LayerGenerator(targetDir_cli, 'apiClient', crudTemplates.apiClient));
 
@@ -181,6 +190,14 @@ async function main() {
     )
     .addGenerator(new StaticFileGenerator(targetDir, 'src/app.js', infraTemplates.app))
     .addGenerator(new StaticFileGenerator(targetDir, 'src/server.js', infraTemplates.server))
+    .addGenerator(new StaticFileGenerator(targetDir, 'jest.config.js', testsTemplates.jestConfig))
+    .addGenerator(
+      new StaticFileGenerator(targetDir, 'tests/jest.setup.js', testsTemplates.jestSetup),
+    )
+    .addGenerator(
+      new StaticFileGenerator(targetDir, 'tests/helpers/auth.js', testsTemplates.authHelper),
+    )
+    .addGenerator(new StaticFileGenerator(targetDir, 'tests/README.md', testsTemplates.readme))
     .addGenerator(new StaticFileGenerator(targetDir, 'package.json', infraTemplates.packageJson))
     .addGenerator(
       new StaticFileGenerator(targetDir, 'prettier.config.js', infraTemplates.prettierConfigFile),

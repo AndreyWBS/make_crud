@@ -16,6 +16,7 @@ O projeto gerado segue esta estrutura:
 - `src/docs/html`: Documentação HTML por entidade.
 - `src/docs/swagger`: Especificação OpenAPI usada pelo Swagger UI.
 - `src/utils`: Utilitários como logger.
+- `tests`: Base de testes automatizados (Jest + Supertest) com matriz de cobertura CRUD, segurança e contrato.
 
 ## Como usar o Gerador
 

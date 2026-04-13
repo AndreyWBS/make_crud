@@ -350,6 +350,9 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
         scripts: {
           start: 'node src/server.js',
           dev: 'nodemon src/server.js',
+          test: 'jest --runInBand --detectOpenHandles',
+          'test:watch': 'jest --watch',
+          'test:integration': 'jest tests/integration --runInBand',
           format: 'prettier --write .',
           'format:check': 'prettier --check .',
         },
@@ -365,8 +368,10 @@ app.listen(env.PORT, () => logger.info('server.started', { port: env.PORT }));
           'swagger-ui-express': '^5.0.1',
         },
         devDependencies: {
+          jest: '^29.7.0',
           nodemon: '^3.1.4',
           prettier: '^3.6.2',
+          supertest: '^7.1.4',
         },
       },
       null,
@@ -752,7 +757,7 @@ DB_NAME=${process.env.DB_NAME || 'my_database'}
 DB_PORT=${process.env.DB_PORT || 3306}
 
 # Disable auth for all routes (non-production only; blocked in production)
-AUTH_DISABLED=false
+AUTH_DISABLED=true
 
 JWT_SECRET=replace_with_minimum_32_characters_secret
 JWT_ISSUER=generated-api

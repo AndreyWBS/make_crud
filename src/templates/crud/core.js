@@ -206,7 +206,7 @@ function buildRelationKey(baseKey, index, discriminator) {
     if (index === 0) {
         return baseKey;
     }
-    return baseKey + '_' + discriminator;
+    return baseKey + '_' + discriminator + '_' + String(index);
 }
 
 /**
@@ -395,17 +395,17 @@ class ${className}Repository {
     /**
      * Busca registro por id com relacionamentos encadeados.
      * @param {string|number} id Valor da PK.
-     * @param {number|string} [depth=2] Profundidade máxima de encadeamento.
+     * @param {number|string} [depth=1] Profundidade máxima de encadeamento.
      * @returns {Promise<any|undefined>}
      */
-    async findByIdWithRelations(id, depth = 2) {
+    async findByIdWithRelations(id, depth = 1) {
         const root = await this.findById(id);
         if (!root) {
             return undefined;
         }
 
         const parsedDepth = Number.parseInt(depth, 10);
-        const safeDepth = Number.isFinite(parsedDepth) ? Math.min(Math.max(parsedDepth, 0), 5) : 2;
+        const safeDepth = Number.isFinite(parsedDepth) ? Math.min(Math.max(parsedDepth, 0), 5) : 1;
         if (safeDepth === 0) {
             return root;
         }
@@ -622,11 +622,11 @@ class ${className}Service {
     /**
      * Obtém registro por id com JSON de relacionamentos encadeados.
      * @param {string|number} id Identificador.
-     * @param {number|string} [depth=2] Profundidade máxima de relacionamento.
+     * @param {number|string} [depth=1] Profundidade máxima de relacionamento.
      * @returns {Promise<any>}
      * @throws {AppError} 404 quando não encontrado.
      */
-    async getByIdWithRelations(id, depth = 2) {
+    async getByIdWithRelations(id, depth = 1) {
         const item = await ${repoName}.findByIdWithRelations(id, depth);
         if (!item) throw new AppError(404, '${className} not found');
         return item;
@@ -805,7 +805,7 @@ class ${className}Controller {
      */
     async getByIdWithRelations(req, res, next) {
         try {
-            const { depth = 2 } = req.query;
+            const { depth = 1 } = req.query;
             const item = await ${serviceName}.getByIdWithRelations(req.params.id, depth);
             res.json(item);
         } catch (error) {
@@ -972,9 +972,9 @@ router.get('/search/:column/:value', authMiddleware, canRead, ${controllerName}.
 router.get('/:id/relations', authMiddleware, canRead, ${controllerName}.getByIdWithRelations);
 router.get('/:id', authMiddleware, canRead, ${controllerName}.getById);
 
-router.post('/', authMiddleware, canWrite, ${validatorName}.validate, ${controllerName}.create);
-router.post('/bulk', authMiddleware, canWrite, ${validatorName}.validateBulk, ${controllerName}.createBulk);
-router.put('/:id', authMiddleware, canWrite, ${validatorName}.validate, ${controllerName}.update);
+router.post('/', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.create);
+router.post('/bulk', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validateBulk(req, res, next), ${controllerName}.createBulk);
+router.put('/:id', authMiddleware, canWrite, (req, res, next) => ${validatorName}.validate(req, res, next), ${controllerName}.update);
 router.delete('/:id', authMiddleware, canDelete, ${controllerName}.delete);
 
 module.exports = router;

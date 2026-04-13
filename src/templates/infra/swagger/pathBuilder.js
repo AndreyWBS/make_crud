@@ -190,7 +190,7 @@ function buildRelationsByIdPath(table, className) {
         {
           in: 'query',
           name: 'depth',
-          schema: { type: 'integer', minimum: 0, maximum: 5, default: 2 },
+          schema: { type: 'integer', minimum: 0, maximum: 5, default: 1 },
           description: 'Profundidade máxima para expandir relacionamentos',
         },
       ],

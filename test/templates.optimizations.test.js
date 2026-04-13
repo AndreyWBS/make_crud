@@ -5,6 +5,7 @@ const crudTemplates = require('../src/templates/crud/core');
 const validatorTemplates = require('../src/templates/validator/validator');
 const infraTemplates = require('../src/templates/infra/basics');
 const swaggerTemplates = require('../src/templates/infra/swagger');
+const testsTemplates = require('../src/templates/tests');
 
 const schema = {
   columns: [
@@ -63,7 +64,8 @@ test('repository template aplica whitelist, paginacao opcional e bulk com transa
     output,
     /findByColumnPaginated\(columnName, value, isStringColumn = false, page = 1, limit = 10, includeTotal = true\)/,
   );
-  assert.match(output, /async findByIdWithRelations\(id, depth = 2\)/);
+  assert.match(output, /async findByIdWithRelations\(id, depth = 1\)/);
+  assert.match(output, /return baseKey \+ '_' \+ discriminator \+ '_' \+ String\(index\);/);
   assert.match(output, /relationships\.belongsTo/);
   assert.match(output, /relationships\.hasMany/);
   assert.ok(!output.includes('async findByName('));
@@ -79,7 +81,7 @@ test('service template valida page/limit/includeTotal, coluna e shape de bulk', 
   assert.match(output, /parseIncludeTotal\(includeTotal\)/);
   assert.match(output, /if \(!ALLOWED_COLUMNS\.has\(columnName\)\)/);
   assert.match(output, /assertUniformBulkShape\(dataArray\)/);
-  assert.match(output, /async getByIdWithRelations\(id, depth = 2\)/);
+  assert.match(output, /async getByIdWithRelations\(id, depth = 1\)/);
   assert.match(output, /includeTotal: shouldIncludeTotal/);
   assert.ok(!output.includes('async findByName('));
   assert.ok(!output.includes('async findByAge('));
@@ -103,6 +105,7 @@ test('route template aplica auth e autorizacao por papel e escopo', () => {
   assert.match(output, /anyRole: \['admin', 'operator', 'read_only'\]/);
   assert.match(output, /RESOURCE \+ ':write'/);
   assert.match(output, /router\.get\('\/:id\/relations', authMiddleware, canRead/);
+  assert.match(output, /\(req, res, next\) => usersValidator\.validate\(req, res, next\)/);
   assert.match(output, /router\.delete\('\/:id', authMiddleware, canDelete/);
 });
 
@@ -116,6 +119,8 @@ test('infra templates contem utilitario de paginacao e configuracoes de observab
   const requestContextOutput = infraTemplates.requestContextMiddleware();
   const requestLoggerOutput = infraTemplates.requestLoggerMiddleware();
   const appOutput = swaggerTemplates.app(['users']);
+  const packageJsonOutput = infraTemplates.packageJson();
+  const packageJson = JSON.parse(packageJsonOutput);
 
   assert.match(paginationOutput, /function normalizePagination\(page, limit\)/);
   assert.match(paginationOutput, /function parseIncludeTotal\(value\)/);
@@ -134,4 +139,24 @@ test('infra templates contem utilitario de paginacao e configuracoes de observab
   assert.match(appOutput, /helmet/);
   assert.match(appOutput, /express-rate-limit/);
   assert.match(appOutput, /SWAGGER_REQUIRE_ADMIN/);
+  assert.equal(packageJson.scripts.test, 'jest --runInBand --detectOpenHandles');
+  assert.equal(packageJson.scripts['test:integration'], 'jest tests/integration --runInBand');
+  assert.ok(packageJson.devDependencies.jest);
+  assert.ok(packageJson.devDependencies.supertest);
+});
+
+test('tests templates geram suite base de integracao e arquivos de suporte', () => {
+  const integrationOutput = testsTemplates.resourceCrudIntegration('users', schema);
+  const authHelperOutput = testsTemplates.authHelper();
+  const jestConfigOutput = testsTemplates.jestConfig();
+  const setupOutput = testsTemplates.jestSetup();
+  const readmeOutput = testsTemplates.readme();
+
+  assert.match(integrationOutput, /describe\('API \/api\/users/);
+  assert.match(integrationOutput, /test\('GET lista sem token retorna 401'/);
+  assert.match(integrationOutput, /test\.todo\('CREATE: obrigatorio ausente/);
+  assert.match(authHelperOutput, /createAccessToken/);
+  assert.match(jestConfigOutput, /testEnvironment: 'node'/);
+  assert.match(setupOutput, /process\.env\.NODE_ENV/);
+  assert.match(readmeOutput, /Jest \+ Supertest/);
 });
